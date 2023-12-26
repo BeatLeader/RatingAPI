@@ -7,8 +7,6 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RatingAPI", "RatingAPI.cspr
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Analyzer", "beatleader-analyzer\beatleader-analyzer\Analyzer.csproj", "{11025E71-9849-4954-B9F3-3319FFB22539}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Parser", "beatleader-parser\beatleader-parser\Parser.csproj", "{9DAF5556-7409-40FD-AEAB-07B4E09A48AB}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -23,10 +21,6 @@ Global
 		{11025E71-9849-4954-B9F3-3319FFB22539}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{11025E71-9849-4954-B9F3-3319FFB22539}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{11025E71-9849-4954-B9F3-3319FFB22539}.Release|Any CPU.Build.0 = Release|Any CPU
-		{9DAF5556-7409-40FD-AEAB-07B4E09A48AB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{9DAF5556-7409-40FD-AEAB-07B4E09A48AB}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{9DAF5556-7409-40FD-AEAB-07B4E09A48AB}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{9DAF5556-7409-40FD-AEAB-07B4E09A48AB}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
