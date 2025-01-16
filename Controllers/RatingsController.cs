@@ -378,7 +378,7 @@ namespace RatingAPI.Controllers
             };
             AccRating ar = new();
             var accRating = ar.GetRating(predictedAcc, ratings.Pass, ratings.Tech);
-            lack = ModifyRatings(lack, njs * timescale);
+            lack = ModifyRatings(lack, njs * timescale, timescale);
             Curve curve = new();
             var pointList = curve.GetCurve(predictedAcc, accRating, lack);
             var star = curve.ToStars(0.96, accRating, lack, pointList);
@@ -393,7 +393,7 @@ namespace RatingAPI.Controllers
             return result;
         }
 
-        public LackMapCalculation ModifyRatings(LackMapCalculation ratings, double njs)
+        public LackMapCalculation ModifyRatings(LackMapCalculation ratings, double njs, double timescale)
         {
             double buff = 1f;
             if (njs > 24)
