@@ -169,7 +169,7 @@ namespace RatingAPI.Controllers
         {
             var (accs, noteTimes, freePoints) = PredictHitsForMap(mapdata, bpm, njs, timescale);
             double AIacc = GetMapAccForHits(accs, freePoints);
-            double adjustedAIacc = ScaleFarmability(AIacc, accs.Count, ((noteTimes.Last() - noteTimes.First()) / timescale) + 15);
+            double adjustedAIacc = ScaleFarmability(AIacc, accs.Count, ((noteTimes.Last() - noteTimes.First() + 4) / timescale) + 2);
             AIacc = adjustedAIacc;
 
             return new PredictionResult
@@ -183,7 +183,7 @@ namespace RatingAPI.Controllers
         {
             var (accs, noteTimes, freePoints) = PredictHitsForMap(mapdata, bpm, njs, timescale);
             double AIacc = GetMapAccForHits(accs, freePoints);
-            double adjustedAIacc = ScaleFarmability(AIacc, accs.Count, ((noteTimes.Last() - noteTimes.First()) /timescale) + 15);
+            double adjustedAIacc = ScaleFarmability(AIacc, accs.Count, ((noteTimes.Last() - noteTimes.First() + 4) / timescale) + 2);
             AIacc = adjustedAIacc;
 
             var rows = accs.Select((acc, index) => new List<double> { acc, noteTimes[index] });
@@ -519,7 +519,7 @@ namespace RatingAPI.Controllers
         {
             var (accs, noteTimes, freePoints) = PredictHitsForMap(mapdata, bpm, njs, timescale);
             double AIacc = GetMapAccForHits(accs, freePoints);
-            double adjustedAIacc = ScaleFarmability(AIacc, accs.Count, ((noteTimes.Last() - noteTimes.First()) / timescale) + 15);
+            double adjustedAIacc = ScaleFarmability(AIacc, accs.Count, ((noteTimes.Last() - noteTimes.First() + 4) / timescale) + 2);
             AIacc = adjustedAIacc;
             return AIacc;
         }
