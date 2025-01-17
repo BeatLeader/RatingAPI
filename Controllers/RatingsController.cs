@@ -379,7 +379,7 @@ namespace RatingAPI.Controllers
             AccRating ar = new();
             var accRating = ar.GetRating(predictedAcc, ratings.Pass, ratings.Tech);
             double LowNoteNerf = ratings.Nerf;
-            if (LowNoteNerf > 0.9)
+            if (LowNoteNerf > 0.85)
             { LowNoteNerf = 1; }
             accRating = (accRating * LowNoteNerf);
             lack = ModifyRatings(lack, njs * timescale, timescale);
