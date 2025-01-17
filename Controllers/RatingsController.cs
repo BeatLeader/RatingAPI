@@ -378,6 +378,10 @@ namespace RatingAPI.Controllers
             };
             AccRating ar = new();
             var accRating = ar.GetRating(predictedAcc, ratings.Pass, ratings.Tech);
+            double LowNoteNerf = ratings.Nerf;
+            if (LowNoteNerf > 0.9)
+            { LowNoteNerf = 1; }
+            accRating = (accRating * LowNoteNerf);
             lack = ModifyRatings(lack, njs * timescale, timescale);
             Curve curve = new();
             var pointList = curve.GetCurve(predictedAcc, accRating, lack);
@@ -396,7 +400,6 @@ namespace RatingAPI.Controllers
        //NJS buff for >24 njs
         public LackMapCalculation ModifyRatings(LackMapCalculation ratings, double njs, double timescale)
         {
-            if (timescale > 1)
             {
                 double buff = 1f;
                 if (njs > 24)
