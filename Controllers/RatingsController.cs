@@ -11,12 +11,12 @@ namespace RatingAPI.Controllers
 {
     public class LackMapCalculation
     {
-        [JsonPropertyName("multi_rating")]
-        public double MultiRating { get; set; } = 0;
+        //[JsonPropertyName("multi_rating")]
+        //public double MultiRating { get; set; } = 0;
         [JsonPropertyName("balanced_pass_diff")]
         public double PassRating { get; set; } = 0;
-        [JsonPropertyName("linear_rating")]
-        public double LinearRating { get; set; } = 0;
+        //[JsonPropertyName("linear_rating")]
+        //public double LinearRating { get; set; } = 0;
 
         [JsonPropertyName("balanced_tech")]
         public double TechRating { get; set; } = 0;
@@ -393,16 +393,20 @@ namespace RatingAPI.Controllers
             return result;
         }
 
+       //NJS buff for >24 njs
         public LackMapCalculation ModifyRatings(LackMapCalculation ratings, double njs, double timescale)
         {
-            double buff = 1f;
-            if (njs > 24)
+            if (timescale > 1)
             {
-                buff = 1 + (0.01 * (njs - 24));
-            }
+                double buff = 1f;
+                if (njs > 24)
+                {
+                    buff = 1 + 0.01 * (njs - 24);
+                }
 
-            ratings.PassRating *= buff;
-            ratings.TechRating *= buff;
+                ratings.PassRating *= buff;
+                ratings.TechRating *= buff;
+            }
 
             return ratings;
         }
