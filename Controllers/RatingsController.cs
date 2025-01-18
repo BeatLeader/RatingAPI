@@ -378,9 +378,14 @@ namespace RatingAPI.Controllers
             };
             AccRating ar = new();
             var accRating = ar.GetRating(predictedAcc, ratings.Pass, ratings.Tech);
+            
+            //nerf acc rating on low note count maps
             double LowNoteNerf = ratings.Nerf;
-            if (LowNoteNerf < 0.85)
-            { accRating = (accRating * LowNoteNerf); }
+            if (LowNoteNerf < 0.82)
+            { 
+                accRating = (accRating * LowNoteNerf); 
+            }
+            
             lack = ModifyRatings(lack, njs * timescale, timescale);
             Curve curve = new();
             var pointList = curve.GetCurve(predictedAcc, accRating, lack);
