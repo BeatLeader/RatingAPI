@@ -36,18 +36,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="model_sleep_4LSTM_acc.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="model_sleep_4LSTM_speed.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="model_sleep_bl.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="tagging_model.onnx">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
+    <EmbeddedResource Include="model_sleep_bl.onnx" />
+    <EmbeddedResource Include="model_sleep_4LSTM_acc.onnx" />
+    <EmbeddedResource Include="model_sleep_4LSTM_speed.onnx" />
+    <EmbeddedResource Include="tagging_model.onnx" />
   </ItemGroup>
 
 </Project>

@@ -2,6 +2,7 @@
 using Microsoft.ML.OnnxRuntime.Tensors;
 using Parser.Map;
 using Parser.Map.Difficulty.V3.Base;
+using System.Reflection;
 
 namespace RatingAPI.Controllers
 {
@@ -27,10 +28,96 @@ namespace RatingAPI.Controllers
         private DataProcessing dataProcessing = new DataProcessing();
 
         private static object inferenceSessionLock = new();
-        private static InferenceSession inferenceSessionAccNew = new InferenceSession(Path.Combine(AppContext.BaseDirectory, "model_sleep_bl.onnx"), new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = NumThreads, ExecutionMode = ExecutionMode.ORT_SEQUENTIAL });
-        private static InferenceSession inferenceSessionAcc = new InferenceSession(Path.Combine(AppContext.BaseDirectory, "model_sleep_4LSTM_acc.onnx"), new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = NumThreads, ExecutionMode = ExecutionMode.ORT_SEQUENTIAL });
-        private static InferenceSession inferenceSessionSpeed = new InferenceSession(Path.Combine(AppContext.BaseDirectory, "model_sleep_4LSTM_speed.onnx"), new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = NumThreads, ExecutionMode = ExecutionMode.ORT_SEQUENTIAL });
-        private static InferenceSession tagSession = new InferenceSession(Path.Combine(AppContext.BaseDirectory, "tagging_model.onnx"));
+        private static InferenceSession? _inferenceSessionAccNew;
+        private static InferenceSession? _inferenceSessionAcc;
+        private static InferenceSession? _inferenceSessionSpeed;
+        private static InferenceSession? _tagSession;
+
+        private static byte[] LoadEmbeddedResource(string resourceName)
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            var fullResourceName = $"RatingAPI.{resourceName}";
+            
+            using (var stream = assembly.GetManifestResourceStream(fullResourceName))
+            {
+                if (stream == null)
+                {
+                    // List available resources for debugging
+                    var availableResources = string.Join(", ", assembly.GetManifestResourceNames());
+                    throw new FileNotFoundException($"Embedded resource '{fullResourceName}' not found. Available resources: {availableResources}");
+                }
+                
+                using (var memoryStream = new MemoryStream())
+                {
+                    stream.CopyTo(memoryStream);
+                    return memoryStream.ToArray();
+                }
+            }
+        }
+
+        private static InferenceSession GetInferenceSessionAccNew()
+        {
+            if (_inferenceSessionAccNew == null)
+            {
+                lock (inferenceSessionLock)
+                {
+                    if (_inferenceSessionAccNew == null)
+                    {
+                        var modelData = LoadEmbeddedResource("model_sleep_bl.onnx");
+                        _inferenceSessionAccNew = new InferenceSession(modelData, new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = NumThreads, ExecutionMode = ExecutionMode.ORT_SEQUENTIAL });
+                    }
+                }
+            }
+            return _inferenceSessionAccNew;
+        }
+
+        private static InferenceSession GetInferenceSessionAcc()
+        {
+            if (_inferenceSessionAcc == null)
+            {
+                lock (inferenceSessionLock)
+                {
+                    if (_inferenceSessionAcc == null)
+                    {
+                        var modelData = LoadEmbeddedResource("model_sleep_4LSTM_acc.onnx");
+                        _inferenceSessionAcc = new InferenceSession(modelData, new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = NumThreads, ExecutionMode = ExecutionMode.ORT_SEQUENTIAL });
+                    }
+                }
+            }
+            return _inferenceSessionAcc;
+        }
+
+        private static InferenceSession GetInferenceSessionSpeed()
+        {
+            if (_inferenceSessionSpeed == null)
+            {
+                lock (inferenceSessionLock)
+                {
+                    if (_inferenceSessionSpeed == null)
+                    {
+                        var modelData = LoadEmbeddedResource("model_sleep_4LSTM_speed.onnx");
+                        _inferenceSessionSpeed = new InferenceSession(modelData, new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = NumThreads, ExecutionMode = ExecutionMode.ORT_SEQUENTIAL });
+                    }
+                }
+            }
+            return _inferenceSessionSpeed;
+        }
+
+        private static InferenceSession GetTagSession()
+        {
+            if (_tagSession == null)
+            {
+                lock (inferenceSessionLock)
+                {
+                    if (_tagSession == null)
+                    {
+                        var modelData = LoadEmbeddedResource("tagging_model.onnx");
+                        _tagSession = new InferenceSession(modelData);
+                    }
+                }
+            }
+            return _tagSession;
+        }
 
         // Replace with this to use gpu. Requires Microsoft.ML.OnnxRuntime.Gpu nuget
         //private static InferenceSession inferenceSession = new InferenceSession(AppContext.BaseDirectory + "\\model_sleep_4LSTM_acc.onnx", Microsoft.ML.OnnxRuntime.SessionOptions.MakeSessionOptionWithCudaProvider());
@@ -103,7 +190,7 @@ namespace RatingAPI.Controllers
 
             lock (inferenceSessionLock)
             {
-                using (var output = (inferenceSessionAccNew).Run(modelInput, new[] { "time_distributed_2" }))
+                using (var output = GetInferenceSessionAccNew().Run(modelInput, new[] { "time_distributed_2" }))
                 {
                     var flatOutput = (output.First().Value as IEnumerable<float>).ToArray();
                     System.Buffer.BlockCopy(flatOutput, 0, outputs, 0, outputs.Length * sizeof(float));
@@ -538,7 +625,7 @@ namespace RatingAPI.Controllers
                 NamedOnnxValue.CreateFromTensor("float_input", input)
             };
 
-            using var results = tagSession.Run(inputs);
+            using var results = GetTagSession().Run(inputs);
 
             return results.First().AsTensor<string>().First();
         }
