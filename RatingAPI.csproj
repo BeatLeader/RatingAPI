@@ -25,13 +25,13 @@
 
   <ItemGroup>
     <Reference Include="Analyzer">
-      <HintPath>..\Analyzer\beatleader-analyzer\obj\Release\netstandard2.1\Analyzer.dll</HintPath>
+      <HintPath>..\Analyzer\beatleader-analyzer\obj\Debug\netstandard2.1\Analyzer.dll</HintPath>
     </Reference>
     <Reference Include="NVorbis">
       <HintPath>dll\NVorbis.dll</HintPath>
     </Reference>
     <Reference Include="Parser">
-      <HintPath>..\Parser\beatleader-parser\obj\Release\netstandard2.1\Parser.dll</HintPath>
+      <HintPath>..\Parser\beatleader-parser\obj\Debug\netstandard2.1\Parser.dll</HintPath>
     </Reference>
   </ItemGroup>
 
