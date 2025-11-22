@@ -24,16 +24,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="beatleader-analyzer\beatleader-analyzer\Analyzer.csproj" />
-    <ProjectReference Include="beatleader-parser\beatleader-parser\Parser.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
     <Reference Include="Analyzer">
-      <HintPath>dll\Analyzer.dll</HintPath>
+      <HintPath>..\Analyzer\beatleader-analyzer\obj\Release\netstandard2.1\Analyzer.dll</HintPath>
     </Reference>
     <Reference Include="NVorbis">
       <HintPath>dll\NVorbis.dll</HintPath>
+    </Reference>
+    <Reference Include="Parser">
+      <HintPath>..\Parser\beatleader-parser\obj\Release\netstandard2.1\Parser.dll</HintPath>
     </Reference>
   </ItemGroup>
 
