@@ -417,13 +417,9 @@ namespace RatingAPI.Controllers
                 Statistics = ratings.Statistics,
             };
 
-            var noteToRemove = ratings.SwingData.Where(x => x.PatternType != "Single").SelectMany(x => x.Cubes).Where(x => !x.Head).Select(x => x.Note).ToList();
-            if (noteToRemove.Count > 0)
-            {
-                mapdata.Notes.RemoveAll(x => noteToRemove.Contains(x));
-            }
-            
-            var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult);
+            var notesToIgnore = ratings.SwingData.Where(x => x.PatternType != "Single").SelectMany(x => x.Cubes).Where(x => !x.Head).Select(x => x.Note).ToList();
+
+            var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult, notesToIgnore);
             AccRating ar = new();
             var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating);
             accRating *= ratings.LowNoteNerf;
