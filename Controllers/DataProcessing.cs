@@ -70,9 +70,10 @@ namespace RatingAPI.Controllers
         }
 
         // Method to get map notes from json
-        public static List<Tuple<double, string, double>> GetMapNotesFromJson(DifficultyV3 mapdata, double bpm)
+        public static List<Tuple<double, string, double>> GetMapNotesFromJson(DifficultyV3 mapdata, double bpm, List<Note> notesToIgnore = null)
         {
             List<Tuple<double, string, double>> mapNotes = mapdata.Notes
+                    .Where(n => notesToIgnore == null || !notesToIgnore.Contains(n))
                     .Where(n => n.x < 1000 && n.x >= 0 && n.y < 1000 && n.y >= 0)
                     .Select(n => Tuple.Create(
                         (double)n.Seconds,
@@ -236,17 +237,17 @@ namespace RatingAPI.Controllers
             return segmentCount * 20 * 8;
         }
 
-        public (List<Tuple<double, string, double>> mapNotes, int freePoints) GetMapData(DifficultyV3 mapdata, double bpm)
+        public (List<Tuple<double, string, double>> mapNotes, int freePoints) GetMapData(DifficultyV3 mapdata, double bpm, List<Note> notesToIgnore = null)
         {
-            var mapNotes = GetMapNotesFromJson(mapdata, bpm);
+            var mapNotes = GetMapNotesFromJson(mapdata, bpm, notesToIgnore);
             var freePoints = GetFreePointsForMap(mapdata);
             return (mapNotes, freePoints);
         }
 
-        public (List<List<double[]>> segments, List<double> noteTimes, int freePoints) PreprocessMap(DifficultyV3 mapdata, double bpm, double timescale, double njsMult = 1)
+        public (List<List<double[]>> segments, List<double> noteTimes, int freePoints) PreprocessMap(DifficultyV3 mapdata, double bpm, double timescale, double njsMult = 1, List<Note> notesToIgnore = null)
         {
             var emptyResponse = (new List<List<double[]>>(), new List<double>(), 0);
-            var (mapNotes, freePoints) = GetMapData(mapdata, bpm);
+            var (mapNotes, freePoints) = GetMapData(mapdata, bpm, notesToIgnore);
             if (mapNotes == null)
             {
                 return emptyResponse;

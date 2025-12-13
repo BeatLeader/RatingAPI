@@ -41,25 +41,18 @@ namespace RatingAPI.Controllers
 
         public List<Point> GetCurve(double predictedAcc, LackMapCalculation lackRatings)
         {
-            List<(double x, double y)> points = baseCurve.ToList();
+            List<(double x, double y)> points = new();
 
             foreach (var p in baseCurve)
             {
                 double newY = p.y;
                 
-                if (p.x >= predictedAcc - 0.01)
-                {
-                    newY *= 1 + 0.1 * lackRatings.MultiRating;
-                }
+                double buffStrength = GetSmoothBuffStrength(p.x, 0.9, 1);
+                newY *= 1 + (0.1 * lackRatings.MultiRating * buffStrength);
 
-                points.Add(new(p.x, newY));
+                points.Add(new(p.x, Math.Round(newY, 3)));
             }
             
-            for (int i = 0; i < points.Count; i++)
-            {
-                points[i] = (points[i].x, Math.Round(points[i].y, 3));
-            }
-
             Point point = new();
             List<Point> curve = point.ToPoints(points).ToList();
             curve = curve.OrderBy(x => x.x).Reverse().ToList();
@@ -100,6 +93,21 @@ namespace RatingAPI.Controllers
 
             double middle_dis = (acc - curve[i - 1].x) / (curve[i].x - curve[i - 1].x);
             return (float)(curve[i - 1].y + middle_dis * (curve[i].y - curve[i - 1].y));
+        }
+
+        private double GetSmoothBuffStrength(double x, double startTransition, double endTransition)
+        {
+            if (x <= startTransition)
+            {
+                return 0.0;
+            }
+            if (x >= endTransition)
+            {
+                return 1.0;
+            }
+            
+            double t = (x - startTransition) / (endTransition - startTransition);
+            return t * t * (3.0 - 2.0 * t);
         }
     }
 }
