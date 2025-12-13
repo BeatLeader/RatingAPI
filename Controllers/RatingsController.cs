@@ -1,3 +1,4 @@
+using Analyzer.BeatmapScanner.Data;
 using beatleader_analyzer;
 using beatleader_parser;
 using Microsoft.AspNetCore.Mvc;
@@ -23,6 +24,12 @@ namespace RatingAPI.Controllers
         public double TechRating { get; set; } = 0;
         [JsonPropertyName("low_note_nerf")]
         public double LowNoteNerf { get; set; } = 0;
+        [JsonPropertyName("multi_rating")]
+        public double MultiRating { get; set; } = 0;
+        [JsonPropertyName("linear_percentage")]
+        public double LinearPercentage { get; set; } = 0;
+        public Statistics Statistics { get; set; } = new Statistics();
+        public List<SwingData> SwingData { get; set; } = new List<SwingData>();
     }
 
     public class RatingResult
@@ -206,6 +213,25 @@ namespace RatingAPI.Controllers
             return ai.Tag(acc, tech, pass);
         }
 
+        [HttpGet("~/json/link/{mode}/{diff}/full/time-scale/{scale}")]
+        public ActionResult<Dictionary<string, object>?> GetByLink(string mode, int diff, double scale, [FromQuery] string link)
+        {
+            var difficulty = FormattingUtils.GetDiffLabel(diff);
+            var mapset = parser.TryDownloadLink(link);
+            if (mapset == null) return null;
+            var beatmapSets = mapset.Info._difficultyBeatmapSets.FirstOrDefault(s => s._beatmapCharacteristicName == CustomModeMapping(mode));
+            if (beatmapSets == null) return null;
+            var data = beatmapSets._difficultyBeatmaps.FirstOrDefault(b => b._difficultyRank == diff);
+            if (data == null) return null;
+            var map = mapset.Difficulties.FirstOrDefault(d => d.Characteristic == CustomModeMapping(mode) && d.Difficulty == difficulty);
+            if (map == null) return null;
+
+            return new Dictionary<string, object>
+            {
+                ["notes"] = ai.PredictHitsForMapNotes(CustomModeDataMapping(mode, map.Data), mapset.Info._beatsPerMinute, scale)
+            };
+        }
+
         [HttpGet("~/json/{hash}/{mode}/{diff}/full/time-scale/{scale}")]
         public ActionResult<Dictionary<string, object>?> Get(string hash, string mode, int diff, double scale)
         {
@@ -227,6 +253,7 @@ namespace RatingAPI.Controllers
             };
         }
 
+        
         [NonAction]
         private PredictionResult? PredictHits(DifficultyV3 mapdata, double bpm, string characteristic, string difficulty, double timescale)
         {
@@ -322,6 +349,7 @@ namespace RatingAPI.Controllers
             return result;
         }
 
+        
         [HttpGet("~/ppai2/graph/{hash}/{mode}/{diff}/full")]
         public ActionResult<Dictionary<string, object>?> GetGraph(string hash, string mode, int diff)
         {
@@ -348,7 +376,7 @@ namespace RatingAPI.Controllers
                 ["SF"] = PredictHits(mapdata, bpm, mode, difficulty, 1.5),
             };
         }
-
+        
         [HttpGet("~/ppai2/graph/link/{mode}/{diff}/full")]
         public ActionResult<Dictionary<string, object>?> GetGraph(string hash, string mode, int diff, [FromQuery] string link)
         {
@@ -374,44 +402,34 @@ namespace RatingAPI.Controllers
             };
         }
 
-        [HttpGet("~/json/link/{mode}/{diff}/full/time-scale/{scale}")]
-        public ActionResult<Dictionary<string, object>?> GetByLink(string mode, int diff, double scale, [FromQuery] string link)
-        {
-            var difficulty = FormattingUtils.GetDiffLabel(diff);
-            var mapset = parser.TryDownloadLink(link);
-            if (mapset == null) return null;
-            var beatmapSets = mapset.Info._difficultyBeatmapSets.FirstOrDefault(s => s._beatmapCharacteristicName == CustomModeMapping(mode));
-            if (beatmapSets == null) return null;
-            var data = beatmapSets._difficultyBeatmaps.FirstOrDefault(b => b._difficultyRank == diff);
-            if (data == null) return null;
-            var map = mapset.Difficulties.FirstOrDefault(d => d.Characteristic == CustomModeMapping(mode) && d.Difficulty == difficulty);
-            if (map == null) return null;
-
-            return new Dictionary<string, object>
-            {
-                ["notes"] = ai.PredictHitsForMapNotes(CustomModeDataMapping(mode, map.Data), mapset.Info._beatsPerMinute, scale)
-            };
-        }
-
         public RatingResult GetBLRatings(DifficultySet map, string characteristic, string difficulty, double bpm, double timescale, double njsMult = 1)
         {
             var mapdata = CustomModeDataMapping(characteristic, map.Data);
             var ratings = analyzer.GetRating(mapdata, characteristic, difficulty, (float)bpm, (float)timescale);
             if (ratings == null) return new();
-            var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult);
             var lack = new LackMapCalculation
             {
                 PassRating = ratings.PassRating,
                 TechRating = ratings.TechRating,
-                LowNoteNerf = ratings.LowNoteNerf
-                //LinearRating = ratings.Linear,
-                //MultiRating = ratings.Multi
+                LowNoteNerf = ratings.LowNoteNerf,
+                MultiRating = ratings.MultiRating,
+                LinearPercentage = ratings.LinearPercentage,
+                Statistics = ratings.Statistics,
+                SwingData = ratings.SwingData
             };
+
+            var noteToRemove = lack.SwingData.Where(x => x.PatternType != "Single").SelectMany(x => x.Cubes).Where(x => !x.Head).Select(x => x.Note).ToList();
+            if (noteToRemove.Count > 0)
+            {
+                mapdata.Notes.RemoveAll(x => noteToRemove.Contains(x));
+            }
+            
+            var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult);
             AccRating ar = new();
             var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating);
             accRating *= ratings.LowNoteNerf;
             Curve curve = new();
-            var pointList = curve.GetCurve(predictedAcc, accRating, lack);
+            var pointList = curve.GetCurve(predictedAcc, lack);
             var star = curve.ToStars(0.96, accRating, lack, pointList);
             RatingResult result = new()
             {

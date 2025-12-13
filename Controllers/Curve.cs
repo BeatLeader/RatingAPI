@@ -39,16 +39,9 @@ namespace RatingAPI.Controllers
                 (0.6, 0.256),
                 (0.0, 0.000)};
 
-        public List<Point> GetCurve(double predictedAcc, double accRating, LackMapCalculation lackRatings)
+        public List<Point> GetCurve(double predictedAcc, LackMapCalculation lackRatings)
         {
             List<(double x, double y)> points = baseCurve.ToList();
-
-            /*
-            double buff = 1;
-            if(lackRatings.LinearRating <= 0.20)
-            {
-                buff = 1 + 0.5 * (0.2 - lackRatings.LinearRating);
-            }
 
             foreach (var p in baseCurve)
             {
@@ -56,23 +49,9 @@ namespace RatingAPI.Controllers
                 
                 if (p.x >= predictedAcc - 0.01)
                 {
-                    if (accRating <= 8) newY *= 1 + 0.025 * (8 - accRating);
-                    newY *= buff;
                     newY *= 1 + 0.1 * lackRatings.MultiRating;
                 }
-                else
-                {
-                    if (lackRatings.MultiRating > 0.1)
-                    {
-                        newY *= 1 - Math.Log(lackRatings.MultiRating * 10, 1.666) / 100;
-                    }
-                    else
-                    {
-                        newY *= 1 - 0.01 * lackRatings.MultiRating;
-                    }
-                }
-                newY *= 1 - lackRatings.LinearRating / 100 * lackRatings.PassRating;
-                
+
                 points.Add(new(p.x, newY));
             }
             
@@ -80,7 +59,6 @@ namespace RatingAPI.Controllers
             {
                 points[i] = (points[i].x, Math.Round(points[i].y, 3));
             }
-            */
 
             Point point = new();
             List<Point> curve = point.ToPoints(points).ToList();
