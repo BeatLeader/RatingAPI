@@ -28,8 +28,8 @@ namespace RatingAPI.Controllers
         public double MultiRating { get; set; } = 0;
         [JsonPropertyName("linear_percentage")]
         public double LinearPercentage { get; set; } = 0;
+        [JsonPropertyName("statistics")]
         public Statistics Statistics { get; set; } = new Statistics();
-        public List<SwingData> SwingData { get; set; } = new List<SwingData>();
     }
 
     public class RatingResult
@@ -415,10 +415,9 @@ namespace RatingAPI.Controllers
                 MultiRating = ratings.MultiRating,
                 LinearPercentage = ratings.LinearPercentage,
                 Statistics = ratings.Statistics,
-                SwingData = ratings.SwingData
             };
 
-            var noteToRemove = lack.SwingData.Where(x => x.PatternType != "Single").SelectMany(x => x.Cubes).Where(x => !x.Head).Select(x => x.Note).ToList();
+            var noteToRemove = ratings.SwingData.Where(x => x.PatternType != "Single").SelectMany(x => x.Cubes).Where(x => !x.Head).Select(x => x.Note).ToList();
             if (noteToRemove.Count > 0)
             {
                 mapdata.Notes.RemoveAll(x => noteToRemove.Contains(x));
