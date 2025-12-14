@@ -39,7 +39,7 @@ namespace RatingAPI.Controllers
                 (0.6, 0.256),
                 (0.0, 0.000)};
 
-        public List<Point> GetCurve(double predictedAcc, LackMapCalculation lackRatings)
+        public List<Point> GetCurve(LackMapCalculation lackRatings)
         {
             List<(double x, double y)> points = new();
 
@@ -48,7 +48,7 @@ namespace RatingAPI.Controllers
                 double newY = p.y;
                 
                 double buffStrength = GetSmoothBuffStrength(p.x, 0.9, 1);
-                newY *= 1 + (0.1 * lackRatings.MultiRating * buffStrength);
+                newY *= 1 + (1 * lackRatings.MultiRating * buffStrength);
 
                 points.Add(new(p.x, Math.Round(newY, 3)));
             }
