@@ -418,22 +418,22 @@ namespace RatingAPI.Controllers
                 Statistics = ratings.Statistics,
             };
 
-            var notesToIgnore = ratings.SwingData.Where(x => x.PatternType != "Single").SelectMany(x => x.Cubes).Where(x => !x.Head).Select(x => x.Note).ToList();
-
-            var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult, notesToIgnore);
-            AccRating ar = new();
-            var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating);
-            accRating *= ratings.LowNoteNerf;
-            Curve curve = new();
-            var pointList = curve.GetCurve(predictedAcc, lack);
-            var star = curve.ToStars(0.96, accRating, lack, pointList);
+            // var notesToIgnore = ratings.SwingData.Where(x => x.PatternType != "Single").SelectMany(x => x.Cubes).Where(x => !x.Head).Select(x => x.Note).ToList();
+            // notesToIgnore = null;
+            // var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult, notesToIgnore);
+            // AccRating ar = new();
+            // var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating);
+            // accRating *= ratings.LowNoteNerf;
+            // Curve curve = new();
+            // var pointList = curve.GetCurve(lack);
+            // var star = curve.ToStars(0.96, accRating, lack, pointList);
             RatingResult result = new()
             {
-                PredictedAcc = predictedAcc,
-                AccRating = accRating,
+                // PredictedAcc = predictedAcc,
+                // AccRating = accRating,
                 LackMapCalculation = lack,
-                PointList = pointList,
-                StarRating = star
+                // PointList = pointList,
+                // StarRating = star
             };
             return result;
         }

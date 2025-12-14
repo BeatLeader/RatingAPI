@@ -43,18 +43,19 @@ namespace RatingAPI.Controllers
         {
             List<(double x, double y)> points = new();
 
-            foreach (var p in baseCurve)
+            /*foreach (var p in baseCurve)
             {
                 double newY = p.y;
-                
-                double buffStrength = GetSmoothBuffStrength(p.x, 0.9, 1);
-                newY *= 1 + (1 * lackRatings.MultiRating * buffStrength);
+
+                double buffStrength01 = GetSmoothBuffStrength(p.x, 0.94, 1);
+                double buffStrength = 0.5 + 0.5 * buffStrength01;
+                newY *= 1 + lackRatings.MultiRating * buffStrength;
 
                 points.Add(new(p.x, Math.Round(newY, 3)));
-            }
+            }*/
             
             Point point = new();
-            List<Point> curve = point.ToPoints(points).ToList();
+            List<Point> curve = point.ToPoints(baseCurve).ToList();
             curve = curve.OrderBy(x => x.x).Reverse().ToList();
 
             return curve;
