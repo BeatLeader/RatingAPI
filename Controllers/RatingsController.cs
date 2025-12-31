@@ -187,7 +187,7 @@ namespace RatingAPI.Controllers
             };
             var results = new Dictionary<string, RatingResult>();
             var difficulty = FormattingUtils.GetDiffLabel(diff);
-            var mapset = parser.TryDownloadLink(link).FirstOrDefault();
+            var mapset = parser.TryDownloadLink(link);
             if (mapset != null)
             {
                 var beatmapSets = mapset.Info._difficultyBeatmapSets.FirstOrDefault(s => s._beatmapCharacteristicName == mode);
@@ -217,7 +217,7 @@ namespace RatingAPI.Controllers
         public ActionResult<Dictionary<string, object>?> GetByLink(string mode, int diff, double scale, [FromQuery] string link)
         {
             var difficulty = FormattingUtils.GetDiffLabel(diff);
-            var mapset = parser.TryDownloadLink(link).FirstOrDefault();
+            var mapset = parser.TryDownloadLink(link);
             if (mapset == null) return null;
             var beatmapSets = mapset.Info._difficultyBeatmapSets.FirstOrDefault(s => s._beatmapCharacteristicName == CustomModeMapping(mode));
             if (beatmapSets == null) return null;
@@ -243,7 +243,7 @@ namespace RatingAPI.Controllers
             if (beatmapSets == null) return null;
             var data = beatmapSets._difficultyBeatmaps.FirstOrDefault();
             if (data == null) return null;
-            var map = mapset.Difficulty;
+            var map = mapset.Difficulties.FirstOrDefault();
             if (map == null) return null;
 
             return new Dictionary<string, object>
@@ -418,22 +418,22 @@ namespace RatingAPI.Controllers
                 Statistics = ratings.Statistics,
             };
 
-            // var notesToIgnore = ratings.SwingData.Where(x => x.PatternType != "Single").SelectMany(x => x.Cubes).Where(x => !x.Head).Select(x => x.Note).ToList();
-            // notesToIgnore = null;
-            // var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult, notesToIgnore);
-            // AccRating ar = new();
-            // var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating);
-            // accRating *= ratings.LowNoteNerf;
-            // Curve curve = new();
-            // var pointList = curve.GetCurve(lack);
-            // var star = curve.ToStars(0.96, accRating, lack, pointList);
+            var notesToIgnore = ratings.SwingData.Where(x => x.PatternType != "Single").SelectMany(x => x.Cubes).Where(x => !x.Head).Select(x => x.Note).ToList();
+            notesToIgnore = null;
+            var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult, notesToIgnore);
+            AccRating ar = new();
+            var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating);
+            accRating *= ratings.LowNoteNerf;
+            Curve curve = new();
+            var pointList = curve.GetCurve(lack);
+            var star = curve.ToStars(0.96, accRating, lack, pointList);
             RatingResult result = new()
             {
-                // PredictedAcc = predictedAcc,
-                // AccRating = accRating,
+                PredictedAcc = predictedAcc,
+                AccRating = accRating,
                 LackMapCalculation = lack,
-                // PointList = pointList,
-                // StarRating = star
+                PointList = pointList,
+                StarRating = star
             };
             return result;
         }
