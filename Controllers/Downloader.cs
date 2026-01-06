@@ -6,6 +6,13 @@ namespace RatingAPI.Controllers
     public class Downloader
     {
         private string _mapsDirectory = "/home/maps";
+        private static readonly HttpClient _sharedHttpClient = new HttpClient();
+        private static readonly SemaphoreSlim _downloadSemaphore = new SemaphoreSlim(4, 4);
+
+        static Downloader()
+        {
+            _sharedHttpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (compatible; BeatSaverDownloader/1.0)");
+        }
 
         public Downloader(string mapsDirectory)
         {
@@ -13,6 +20,11 @@ namespace RatingAPI.Controllers
         }
 
         public string? Map(string hash)
+        {
+            return MapAsync(hash).GetAwaiter().GetResult();
+        }
+
+        public async Task<string?> MapAsync(string hash)
         {
             string lowerCaseDir = Path.Combine(_mapsDirectory, hash.ToLower());
             if (Directory.Exists(lowerCaseDir))
@@ -27,62 +39,82 @@ namespace RatingAPI.Controllers
                 return mapDir;
             }
 
-            string beatsaverUrl = $"https://beatsaver.com/api/maps/hash/{hash}";
-            using var httpClient = new HttpClient();
-            dynamic? beatsaverData = null;
-            string? downloadURL = null;
-            try {
-                var response = httpClient.GetStringAsync(beatsaverUrl).Result;
-                beatsaverData = response != null ? JsonConvert.DeserializeObject(response) : null;
-                downloadURL = string.Empty;
-            } catch (Exception e) {
-                return null;
-            }
-
-            if (beatsaverData == null) {
-                return null;
-            }
-
-            foreach (var version in beatsaverData.versions)
+            await _downloadSemaphore.WaitAsync();
+            try
             {
-                if (version.hash.ToString().ToLower() == hash.ToLower())
+                if (Directory.Exists(lowerCaseDir))
                 {
-                    downloadURL = version.downloadURL;
-                    break;
+                    return lowerCaseDir;
                 }
-            }
 
-            if (string.IsNullOrEmpty(downloadURL))
-            {
-                return null;
-            }
-
-            using var client = new HttpClient();
-            client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (compatible; BeatSaverDownloader/1.0)");
-            var data = client.GetByteArrayAsync(downloadURL);
-
-            using var zipStream = new MemoryStream(data.Result);
-            using var zipArchive = new ZipArchive(zipStream);
-            Directory.CreateDirectory(mapDir);
-            zipArchive.ExtractToDirectory(mapDir);
-
-            string[] extractedFiles = Directory.GetFiles(mapDir);
-            foreach (string extractedFile in extractedFiles)
-            {
-                if (!extractedFile.EndsWith(".dat") && !extractedFile.EndsWith(".json") && !extractedFile.EndsWith(".data"))
+                if (Directory.Exists(mapDir))
                 {
-                    try
+                    return mapDir;
+                }
+
+                string beatsaverUrl = $"https://beatsaver.com/api/maps/hash/{hash}";
+                dynamic? beatsaverData = null;
+                string? downloadURL = null;
+                
+                try
+                {
+                    var response = await _sharedHttpClient.GetStringAsync(beatsaverUrl);
+                    beatsaverData = response != null ? JsonConvert.DeserializeObject(response) : null;
+                    downloadURL = string.Empty;
+                }
+                catch (Exception)
+                {
+                    return null;
+                }
+
+                if (beatsaverData == null)
+                {
+                    return null;
+                }
+
+                foreach (var version in beatsaverData.versions)
+                {
+                    if (version.hash.ToString().ToLower() == hash.ToLower())
                     {
-                        File.Delete(extractedFile);
-                    }
-                    catch
-                    {
-                        // Handle exceptions if required or continue
+                        downloadURL = version.downloadURL;
+                        break;
                     }
                 }
-            }
 
-            return mapDir;
+                if (string.IsNullOrEmpty(downloadURL))
+                {
+                    return null;
+                }
+
+                var data = await _sharedHttpClient.GetByteArrayAsync(downloadURL);
+
+                using var zipStream = new MemoryStream(data);
+                using var zipArchive = new ZipArchive(zipStream);
+                Directory.CreateDirectory(mapDir);
+                zipArchive.ExtractToDirectory(mapDir);
+
+                string[] extractedFiles = Directory.GetFiles(mapDir);
+                foreach (string extractedFile in extractedFiles)
+                {
+                    if (!extractedFile.EndsWith(".dat") && !extractedFile.EndsWith(".json") && !extractedFile.EndsWith(".data"))
+                    {
+                        try
+                        {
+                            File.Delete(extractedFile);
+                        }
+                        catch
+                        {
+                            // Handle exceptions if required or continue
+                        }
+                    }
+                }
+
+                return mapDir;
+            }
+            finally
+            {
+                _downloadSemaphore.Release();
+            }
         }
     }
 }

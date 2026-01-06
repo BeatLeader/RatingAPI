@@ -24,12 +24,19 @@ namespace RatingAPI.Controllers
     public class InferPublish
     {
         private const int BatchSize = 4;
-        private const int NumThreads = 4;
+        private const int NumThreads = 1; // Reduce per-session threads since we'll have multiple sessions
         private const int preSegmentSize = 12;
         private const int postSegmentSize = 12;
         private DataProcessing dataProcessing = new DataProcessing();
 
         private static object inferenceSessionLock = new();
+        
+        // Thread-local inference sessions for parallel processing
+        private static ThreadLocal<InferenceSession?> _inferenceSessionAccNewThreadLocal = new ThreadLocal<InferenceSession?>(() => null);
+        private static ThreadLocal<InferenceSession?> _inferenceSessionAccThreadLocal = new ThreadLocal<InferenceSession?>(() => null);
+        private static ThreadLocal<InferenceSession?> _inferenceSessionSpeedThreadLocal = new ThreadLocal<InferenceSession?>(() => null);
+        
+        // Keep static versions for backward compatibility and tag session (less frequently used)
         private static InferenceSession? _inferenceSessionAccNew;
         private static InferenceSession? _inferenceSessionAcc;
         private static InferenceSession? _inferenceSessionSpeed;
@@ -59,50 +66,33 @@ namespace RatingAPI.Controllers
 
         private static InferenceSession GetInferenceSessionAccNew()
         {
-            if (_inferenceSessionAccNew == null)
+            // Try thread-local first
+            if (_inferenceSessionAccNewThreadLocal.Value == null)
             {
-                lock (inferenceSessionLock)
-                {
-                    if (_inferenceSessionAccNew == null)
-                    {
-                        var modelData = LoadEmbeddedResource("model_sleep_bl.onnx");
-                        _inferenceSessionAccNew = new InferenceSession(modelData, new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = NumThreads, ExecutionMode = ExecutionMode.ORT_SEQUENTIAL });
-                    }
-                }
+                var modelData = LoadEmbeddedResource("model_sleep_bl.onnx");
+                _inferenceSessionAccNewThreadLocal.Value = new InferenceSession(modelData, new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = NumThreads, ExecutionMode = ExecutionMode.ORT_SEQUENTIAL });
             }
-            return _inferenceSessionAccNew;
+            return _inferenceSessionAccNewThreadLocal.Value;
         }
 
         private static InferenceSession GetInferenceSessionAcc()
         {
-            if (_inferenceSessionAcc == null)
+            if (_inferenceSessionAccThreadLocal.Value == null)
             {
-                lock (inferenceSessionLock)
-                {
-                    if (_inferenceSessionAcc == null)
-                    {
-                        var modelData = LoadEmbeddedResource("model_sleep_4LSTM_acc.onnx");
-                        _inferenceSessionAcc = new InferenceSession(modelData, new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = NumThreads, ExecutionMode = ExecutionMode.ORT_SEQUENTIAL });
-                    }
-                }
+                var modelData = LoadEmbeddedResource("model_sleep_4LSTM_acc.onnx");
+                _inferenceSessionAccThreadLocal.Value = new InferenceSession(modelData, new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = NumThreads, ExecutionMode = ExecutionMode.ORT_SEQUENTIAL });
             }
-            return _inferenceSessionAcc;
+            return _inferenceSessionAccThreadLocal.Value;
         }
 
         private static InferenceSession GetInferenceSessionSpeed()
         {
-            if (_inferenceSessionSpeed == null)
+            if (_inferenceSessionSpeedThreadLocal.Value == null)
             {
-                lock (inferenceSessionLock)
-                {
-                    if (_inferenceSessionSpeed == null)
-                    {
-                        var modelData = LoadEmbeddedResource("model_sleep_4LSTM_speed.onnx");
-                        _inferenceSessionSpeed = new InferenceSession(modelData, new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = NumThreads, ExecutionMode = ExecutionMode.ORT_SEQUENTIAL });
-                    }
-                }
+                var modelData = LoadEmbeddedResource("model_sleep_4LSTM_speed.onnx");
+                _inferenceSessionSpeedThreadLocal.Value = new InferenceSession(modelData, new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = NumThreads, ExecutionMode = ExecutionMode.ORT_SEQUENTIAL });
             }
-            return _inferenceSessionSpeed;
+            return _inferenceSessionSpeedThreadLocal.Value;
         }
 
         private static InferenceSession GetTagSession()
@@ -190,13 +180,11 @@ namespace RatingAPI.Controllers
 
             var outputs = new float[input.Length, 8];
 
-            lock (inferenceSessionLock)
+            // Remove the lock - each thread has its own session now
+            using (var output = GetInferenceSessionAccNew().Run(modelInput, new[] { "time_distributed_2" }))
             {
-                using (var output = GetInferenceSessionAccNew().Run(modelInput, new[] { "time_distributed_2" }))
-                {
-                    var flatOutput = (output.First().Value as IEnumerable<float>).ToArray();
-                    System.Buffer.BlockCopy(flatOutput, 0, outputs, 0, outputs.Length * sizeof(float));
-                }
+                var flatOutput = (output.First().Value as IEnumerable<float>).ToArray();
+                System.Buffer.BlockCopy(flatOutput, 0, outputs, 0, outputs.Length * sizeof(float));
             }
 
             var listOutputs = new List<float[]>();
