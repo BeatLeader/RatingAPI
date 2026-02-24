@@ -1,3 +1,5 @@
+using RatingAPI;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -18,6 +20,8 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
+
+app.UseMiddleware<ErrorLoggingMiddleware>();
 
 app.UseHttpsRedirection();
 

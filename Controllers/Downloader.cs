@@ -66,22 +66,6 @@ namespace RatingAPI.Controllers
             Directory.CreateDirectory(mapDir);
             zipArchive.ExtractToDirectory(mapDir);
 
-            string[] extractedFiles = Directory.GetFiles(mapDir);
-            foreach (string extractedFile in extractedFiles)
-            {
-                if (!extractedFile.EndsWith(".dat") && !extractedFile.EndsWith(".json") && !extractedFile.EndsWith(".data"))
-                {
-                    try
-                    {
-                        File.Delete(extractedFile);
-                    }
-                    catch
-                    {
-                        // Handle exceptions if required or continue
-                    }
-                }
-            }
-
             return mapDir;
         }
     }

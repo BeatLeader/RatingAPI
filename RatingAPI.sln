@@ -1,13 +1,13 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.7.34031.279
+# Visual Studio Version 18
+VisualStudioVersion = 18.2.11408.102 d18.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RatingAPI", "RatingAPI.csproj", "{1E1EE9AD-07AA-4476-8BED-2F115336D752}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Analyzer", "beatleader-analyzer\beatleader-analyzer\Analyzer.csproj", "{11025E71-9849-4954-B9F3-3319FFB22539}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Parser", "beatleader-parser\beatleader-parser\Parser.csproj", "{9DAF5556-7409-40FD-AEAB-07B4E09A48AB}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Parser", "beatleader-analyzer\Parser\beatleader-parser\Parser.csproj", "{17906C48-AB42-1307-AA76-76985F6C0ED1}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -23,10 +23,10 @@ Global
 		{11025E71-9849-4954-B9F3-3319FFB22539}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{11025E71-9849-4954-B9F3-3319FFB22539}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{11025E71-9849-4954-B9F3-3319FFB22539}.Release|Any CPU.Build.0 = Release|Any CPU
-		{9DAF5556-7409-40FD-AEAB-07B4E09A48AB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{9DAF5556-7409-40FD-AEAB-07B4E09A48AB}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{9DAF5556-7409-40FD-AEAB-07B4E09A48AB}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{9DAF5556-7409-40FD-AEAB-07B4E09A48AB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{17906C48-AB42-1307-AA76-76985F6C0ED1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{17906C48-AB42-1307-AA76-76985F6C0ED1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{17906C48-AB42-1307-AA76-76985F6C0ED1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{17906C48-AB42-1307-AA76-76985F6C0ED1}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
