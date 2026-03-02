@@ -8,6 +8,8 @@ namespace RatingAPI.Controllers
         private string _mapsDirectory = "/home/maps";
         private static readonly HttpClient _sharedHttpClient = new HttpClient();
         private static readonly SemaphoreSlim _downloadSemaphore = new SemaphoreSlim(4, 4);
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _hashLocks =
+            new System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.OrdinalIgnoreCase);
 
         static Downloader()
         {
@@ -26,31 +28,38 @@ namespace RatingAPI.Controllers
 
         public async Task<string?> MapAsync(string hash)
         {
-            string lowerCaseDir = Path.Combine(_mapsDirectory, hash.ToLower());
+            var hashKey = hash.ToLowerInvariant();
+
+            // Ensure only one MapAsync operates on the same hash concurrently.
+            var hashSemaphore = _hashLocks.GetOrAdd(hashKey, _ => new SemaphoreSlim(1, 1));
+            await hashSemaphore.WaitAsync();
+            try
+            {
+                string lowerCaseDir = Path.Combine(_mapsDirectory, hashKey);
             if (Directory.Exists(lowerCaseDir))
             {
                 return lowerCaseDir;
             }
 
-            string mapDir = Path.Combine(_mapsDirectory, hash.ToUpper());
+                string mapDir = Path.Combine(_mapsDirectory, hash.ToUpper());
 
             if (Directory.Exists(mapDir))
             {
                 return mapDir;
             }
 
-            await _downloadSemaphore.WaitAsync();
-            try
-            {
-                if (Directory.Exists(lowerCaseDir))
+                await _downloadSemaphore.WaitAsync();
+                try
                 {
-                    return lowerCaseDir;
-                }
+                    if (Directory.Exists(lowerCaseDir))
+                    {
+                        return lowerCaseDir;
+                    }
 
-                if (Directory.Exists(mapDir))
-                {
-                    return mapDir;
-                }
+                    if (Directory.Exists(mapDir))
+                    {
+                        return mapDir;
+                    }
 
                 string beatsaverUrl = $"https://beatsaver.com/api/maps/hash/{hash}";
                 dynamic? beatsaverData = null;
@@ -91,7 +100,8 @@ namespace RatingAPI.Controllers
                 using var zipStream = new MemoryStream(data);
                 using var zipArchive = new ZipArchive(zipStream);
                 Directory.CreateDirectory(mapDir);
-                zipArchive.ExtractToDirectory(mapDir);
+                // Overwrite existing files if they exist to avoid exceptions when extracting.
+                zipArchive.ExtractToDirectory(mapDir, true);
 
                 string[] extractedFiles = Directory.GetFiles(mapDir);
                 foreach (string extractedFile in extractedFiles)
@@ -109,11 +119,28 @@ namespace RatingAPI.Controllers
                     }
                 }
 
-                return mapDir;
+                    return mapDir;
+                }
+                finally
+                {
+                    _downloadSemaphore.Release();
+                }
             }
             finally
             {
-                _downloadSemaphore.Release();
+                // Release and try to remove the semaphore to avoid unbounded growth.
+                hashSemaphore.Release();
+                try
+                {
+                    if (hashSemaphore.CurrentCount == 1)
+                    {
+                        _hashLocks.TryRemove(hashKey, out _);
+                    }
+                }
+                catch
+                {
+                    // Ignore cleanup errors
+                }
             }
         }
     }

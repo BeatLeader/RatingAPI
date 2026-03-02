@@ -44,6 +44,8 @@ namespace RatingAPI.Controllers
         public LackMapCalculation LackMapCalculation { get; set; } = new();
         [JsonPropertyName("pointlist")]
         public List<Point> PointList { get; set; } = new();
+        [JsonPropertyName("song_length")]
+        public float Length { get; set; } = 0;
     }
 
     public class Point
@@ -418,9 +420,15 @@ namespace RatingAPI.Controllers
                 Statistics = ratings.Statistics,
             };
 
-            var notesToIgnore = ratings.SwingData.Where(x => x.PatternType != "Single").SelectMany(x => x.Cubes).Where(x => !x.Head).Select(x => x.Note).ToList();
-            notesToIgnore = null;
-            var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult, notesToIgnore);
+            var start = map.Data.Notes.OrderBy(x => x.Seconds).FirstOrDefault()?.Seconds ?? 9999;
+            start = Math.Min(start, map.Data.Walls.OrderBy(x => x.Seconds).FirstOrDefault()?.Seconds ?? 9999);
+            var end = map.Data.Notes.OrderByDescending(x => x.Seconds).FirstOrDefault()?.Seconds ?? 0;
+            end = Math.Max(end, map.Data.Walls.OrderByDescending(x => x.Seconds).FirstOrDefault()?.Seconds ?? 0);
+            var length = end - start;
+            if (start == 9999 || end == 0) length = 0;
+
+            
+            var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult);
             AccRating ar = new();
             var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating);
             accRating *= ratings.LowNoteNerf;
@@ -433,7 +441,8 @@ namespace RatingAPI.Controllers
                 AccRating = accRating,
                 LackMapCalculation = lack,
                 PointList = pointList,
-                StarRating = star
+                StarRating = star,
+                Length = length
             };
             return result;
         }
