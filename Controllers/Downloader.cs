@@ -8,12 +8,39 @@ namespace RatingAPI.Controllers
         private string _mapsDirectory = "/home/maps";
         private static readonly HttpClient _sharedHttpClient = new HttpClient();
         private static readonly SemaphoreSlim _downloadSemaphore = new SemaphoreSlim(4, 4);
+        private static readonly SemaphoreSlim _throttleSemaphore = new SemaphoreSlim(1, 1);
+        private static readonly TimeSpan _throttleDelay = TimeSpan.FromMilliseconds(500);
+        private static DateTime _lastRequestTime = DateTime.MinValue;
+        private const int MaxRetries = 3;
+        private static readonly TimeSpan[] RetryDelays = [
+            TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromSeconds(15)
+        ];
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _hashLocks =
             new System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.OrdinalIgnoreCase);
 
         static Downloader()
         {
             _sharedHttpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (compatible; BeatSaverDownloader/1.0)");
+        }
+
+        private static async Task ThrottleAsync()
+        {
+            await _throttleSemaphore.WaitAsync();
+            try
+            {
+                var elapsed = DateTime.UtcNow - _lastRequestTime;
+                if (elapsed < _throttleDelay)
+                {
+                    await Task.Delay(_throttleDelay - elapsed);
+                }
+                _lastRequestTime = DateTime.UtcNow;
+            }
+            finally
+            {
+                _throttleSemaphore.Release();
+            }
         }
 
         public Downloader(string mapsDirectory)
@@ -65,15 +92,25 @@ namespace RatingAPI.Controllers
                 dynamic? beatsaverData = null;
                 string? downloadURL = null;
                 
-                try
+                for (int attempt = 0; attempt <= MaxRetries; attempt++)
                 {
-                    var response = await _sharedHttpClient.GetStringAsync(beatsaverUrl);
-                    beatsaverData = response != null ? JsonConvert.DeserializeObject(response) : null;
-                    downloadURL = string.Empty;
-                }
-                catch (Exception)
-                {
-                    return null;
+                    try
+                    {
+                        await ThrottleAsync();
+                        var response = await _sharedHttpClient.GetStringAsync(beatsaverUrl);
+                        beatsaverData = response != null ? JsonConvert.DeserializeObject(response) : null;
+                        downloadURL = string.Empty;
+                        break;
+                    }
+                    catch (HttpRequestException ex) when (attempt < MaxRetries)
+                    {
+                        Console.WriteLine($"BeatSaver API request failed for {hash} (attempt {attempt + 1}/{MaxRetries + 1}): {ex.Message}. Retrying in {RetryDelays[attempt].TotalSeconds}s...");
+                        await Task.Delay(RetryDelays[attempt]);
+                    }
+                    catch (Exception)
+                    {
+                        return null;
+                    }
                 }
 
                 if (beatsaverData == null)
@@ -95,7 +132,30 @@ namespace RatingAPI.Controllers
                     return null;
                 }
 
-                var data = await _sharedHttpClient.GetByteArrayAsync(downloadURL);
+                byte[]? data = null;
+                for (int attempt = 0; attempt <= MaxRetries; attempt++)
+                {
+                    try
+                    {
+                        await ThrottleAsync();
+                        data = await _sharedHttpClient.GetByteArrayAsync(downloadURL);
+                        break;
+                    }
+                    catch (HttpRequestException ex) when (attempt < MaxRetries)
+                    {
+                        Console.WriteLine($"Map download failed for {hash} (attempt {attempt + 1}/{MaxRetries + 1}): {ex.Message}. Retrying in {RetryDelays[attempt].TotalSeconds}s...");
+                        await Task.Delay(RetryDelays[attempt]);
+                    }
+                    catch (Exception)
+                    {
+                        return null;
+                    }
+                }
+
+                if (data == null)
+                {
+                    return null;
+                }
 
                 using var zipStream = new MemoryStream(data);
                 using var zipArchive = new ZipArchive(zipStream);
