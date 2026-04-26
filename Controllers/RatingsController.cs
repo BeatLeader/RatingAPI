@@ -24,8 +24,8 @@ namespace RatingAPI.Controllers
         public double TechRating { get; set; } = 0;
         [JsonPropertyName("low_note_nerf")]
         public double LowNoteNerf { get; set; } = 0;
-        [JsonPropertyName("multi_rating")]
-        public double MultiRating { get; set; } = 0;
+        [JsonPropertyName("multi_percentage")]
+        public double MultiPercentage { get; set; } = 0;
         [JsonPropertyName("linear_percentage")]
         public double LinearPercentage { get; set; } = 0;
         [JsonPropertyName("statistics")]
@@ -415,7 +415,7 @@ namespace RatingAPI.Controllers
                 PassRating = ratings.PassRating,
                 TechRating = ratings.TechRating,
                 LowNoteNerf = ratings.LowNoteNerf,
-                MultiRating = ratings.MultiRating,
+                MultiPercentage = ratings.MultiPercentage,
                 LinearPercentage = ratings.LinearPercentage,
                 Statistics = ratings.Statistics,
             };
