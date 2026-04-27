@@ -30,6 +30,8 @@ namespace RatingAPI.Controllers
         public double LinearPercentage { get; set; } = 0;
         [JsonPropertyName("statistics")]
         public Statistics Statistics { get; set; } = new Statistics();
+        [JsonPropertyName("stamina_rating")]
+        public double StaminaRating {  get; set; } = 0;
     }
 
     public class RatingResult
@@ -170,6 +172,52 @@ namespace RatingAPI.Controllers
                         njsMult = ((timescale - 1) / 2 + 1) / timescale;
                     }
                     results[name] = GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, timescale, njsMult);
+                }
+            }
+            _logger.LogWarning("Took " + sw.ElapsedMilliseconds);
+
+            return results;
+        }
+
+        [HttpGet("~/ppai2/stamina/{hash}/{mode}/{diff}")]
+        public ActionResult<Dictionary<string, RatingResult>> GetStamina(string hash, string mode, int diff)
+        {
+            Stopwatch sw = Stopwatch.StartNew();
+            var modifiers = new List<(string, double)>() {
+                ("SS", 0.85),
+                ("none", 1),
+                ("FS", 1.2),
+                ("SFS", 1.5),
+                ("BFS", 1.2),
+                ("BSF", 1.5),
+            };
+            var results = new Dictionary<string, RatingResult>();
+            var difficulty = FormattingUtils.GetDiffLabel(diff);
+            var mapPath = downloader.Map(hash);
+            if (mapPath == null) return NotFound();
+            BeatmapV3? mapset = null;
+            try
+            {
+                mapset = parser.TryLoadPath(mapPath);
+            }
+            catch (FileNotFoundException e)
+            {
+                Directory.Delete(mapPath, true);
+                mapPath = downloader.Map(hash);
+                mapset = parser.TryLoadPath(mapPath);
+            }
+            if (mapset != null)
+            {
+                var map = mapset.Difficulties.FirstOrDefault(d => d.Characteristic == CustomModeMapping(mode) && (d.BeatMap._difficultyRank == diff || d.BeatMap._difficulty == difficulty));
+                if (map == null) return results;
+                foreach ((var name, var timescale) in modifiers)
+                {
+                    var njsMult = 1.0;
+                    if (name == "BFS" || name == "BSF")
+                    {
+                        njsMult = ((timescale - 1) / 2 + 1) / timescale;
+                    }
+                    results[name] = GetBLRatingsStamina(map, mode, difficulty, mapset.Info._beatsPerMinute, timescale, njsMult);
                 }
             }
             _logger.LogWarning("Took " + sw.ElapsedMilliseconds);
@@ -418,6 +466,7 @@ namespace RatingAPI.Controllers
                 MultiPercentage = ratings.MultiPercentage,
                 LinearPercentage = ratings.LinearPercentage,
                 Statistics = ratings.Statistics,
+                StaminaRating = ratings.StaminaRating
             };
 
             var start = map.Data.Notes.OrderBy(x => x.Seconds).FirstOrDefault()?.Seconds ?? 9999;
@@ -443,6 +492,28 @@ namespace RatingAPI.Controllers
                 PointList = pointList,
                 StarRating = star,
                 Length = length
+            };
+            return result;
+        }
+
+        public RatingResult GetBLRatingsStamina(DifficultySet map, string characteristic, string difficulty, double bpm, double timescale, double njsMult = 1)
+        {
+            var mapdata = CustomModeDataMapping(characteristic, map.Data);
+            var ratings = analyzer.GetRating(mapdata, characteristic, difficulty, (float)bpm, (float)timescale, (float)njsMult);
+            if (ratings == null) return new();
+            var lack = new LackMapCalculation
+            {
+                PassRating = ratings.PassRating,
+                TechRating = ratings.TechRating,
+                LowNoteNerf = ratings.LowNoteNerf,
+                MultiPercentage = ratings.MultiPercentage,
+                LinearPercentage = ratings.LinearPercentage,
+                Statistics = ratings.Statistics,
+                StaminaRating = ratings.StaminaRating
+            };
+            RatingResult result = new()
+            {
+                LackMapCalculation = lack,
             };
             return result;
         }
