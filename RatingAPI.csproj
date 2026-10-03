@@ -35,6 +35,7 @@
     <EmbeddedResource Include="model_sleep_4LSTM_acc.onnx" />
     <EmbeddedResource Include="model_sleep_4LSTM_speed.onnx" />
     <EmbeddedResource Include="tagging_model.onnx" />
+    <EmbeddedResource Include="acc_model.json" Condition="Exists('acc_model.json')" />
   </ItemGroup>
 
   <ItemGroup>

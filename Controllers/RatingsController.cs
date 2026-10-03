@@ -46,6 +46,15 @@ namespace RatingAPI.Controllers
         public List<Point> PointList { get; set; } = new();
         [JsonPropertyName("song_length")]
         public float Length { get; set; } = 0;
+        /// <summary>Which source produced PredictedAcc ("ML" or "Algorithm").</summary>
+        [JsonPropertyName("acc_source")]
+        public string AccSource { get; set; } = "ML";
+        /// <summary>ONNX model prediction (always computed, for comparison).</summary>
+        [JsonPropertyName("ml_predicted_acc")]
+        public double MlPredictedAcc { get; set; } = 0;
+        /// <summary>Algorithmic (AccDifficultyModel) prediction; 0 when unavailable.</summary>
+        [JsonPropertyName("algo_predicted_acc")]
+        public double AlgoPredictedAcc { get; set; } = 0;
     }
 
     public class Point
@@ -86,10 +95,15 @@ namespace RatingAPI.Controllers
 
         private readonly InferPublish ai = new();
 
+        /// <summary>Default source of PredictedAcc when the configuration does not set "AccSource".</summary>
+        public static AccSource DefaultAccSource = Controllers.AccSource.ML;
+        private readonly AccSource accSource;
+
         public RatingsController(IConfiguration configuration, ILogger<RatingsController> logger)
         {
             _logger = logger;
             downloader = new(configuration.GetValue<string>("MapsPath") ?? "");
+            accSource = Enum.TryParse<AccSource>(configuration.GetValue<string>("AccSource"), true, out var source) ? source : DefaultAccSource;
         }
 
         public string CustomModeMapping(string mode)
@@ -428,7 +442,13 @@ namespace RatingAPI.Controllers
             if (start == 9999 || end == 0) length = 0;
 
             
-            var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult);
+            var mlPredictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult);
+            // the algorithm calibrates speed-modifier shifts against the unmodified map's analyzer output
+            var baseRatings = AccDifficultyModel.Default != null && (timescale != 1 || njsMult != 1)
+                ? analyzer.GetRating(mapdata, characteristic, difficulty, (float)bpm, 1, 1) : null;
+            var algoPredictedAcc = AccDifficultyModel.Default?.PredictedAcc(ratings, mapdata, bpm, timescale, njsMult, baseRatings);
+            bool useAlgo = accSource == Controllers.AccSource.Algorithm && algoPredictedAcc != null;
+            var predictedAcc = useAlgo ? algoPredictedAcc!.Value : mlPredictedAcc;
             AccRating ar = new();
             var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating);
             accRating *= ratings.LowNoteNerf;
@@ -442,7 +462,10 @@ namespace RatingAPI.Controllers
                 LackMapCalculation = lack,
                 PointList = pointList,
                 StarRating = star,
-                Length = length
+                Length = length,
+                AccSource = useAlgo ? "Algorithm" : "ML",
+                MlPredictedAcc = mlPredictedAcc,
+                AlgoPredictedAcc = algoPredictedAcc ?? 0,
             };
             return result;
         }
