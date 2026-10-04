@@ -161,8 +161,15 @@ namespace RatingAPI.Controllers
         [JsonPropertyName("scale")] public double[] Scale { get; set; } = Array.Empty<double>();
         [JsonPropertyName("coef")] public double[] Coef { get; set; } = Array.Empty<double>();
         [JsonPropertyName("intercept")] public double Intercept { get; set; }
-        /// <summary>Reference skill a_ref: predictedAcc = 1 - exp(difficulty - a_ref).</summary>
+        /// <summary>Reference skill a_ref: predictedAcc = 1 - exp(difficulty' - a_ref).</summary>
         [JsonPropertyName("reference_skill")] public double ReferenceSkill { get; set; }
+        /// <summary>
+        /// Spread calibration: difficulty' = center + scale * (difficulty - center). 1 keeps the full score-implied spread
+        /// (~1.2x the ML's); smaller values flatten the PP-versus-skill profile at the cost of fairness between maps
+        /// (see portaBLe Analysis/ALGO_ACC_TEST.md, "Calibration").
+        /// </summary>
+        [JsonPropertyName("difficulty_scale")] public double DifficultyScale { get; set; } = 1.0;
+        [JsonPropertyName("difficulty_center")] public double DifficultyCenter { get; set; } = 0.0;
         [JsonPropertyName("min_predicted_acc")] public double MinPredictedAcc { get; set; } = 0.5;
         [JsonPropertyName("max_predicted_acc")] public double MaxPredictedAcc { get; set; } = 0.9995;
         /// <summary>
@@ -215,6 +222,10 @@ namespace RatingAPI.Controllers
         public static AccDifficultyModel Load(string path) =>
             new AccDifficultyModel(JsonSerializer.Deserialize<AccModelSpec>(File.ReadAllText(path)) ?? throw new InvalidDataException(path));
 
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, AccDifficultyModel> _loaded = new();
+        /// <summary>Load once per path (controllers are created per request).</summary>
+        public static AccDifficultyModel LoadCached(string path) => _loaded.GetOrAdd(Path.GetFullPath(path), Load);
+
         /// <summary>Predicted score-implied difficulty d (log error rate units) from a full feature vector.</summary>
         public double PredictDifficulty(double[] features)
         {
@@ -228,8 +239,11 @@ namespace RatingAPI.Controllers
             return d;
         }
 
-        public double PredictedAccFromDifficulty(double difficulty) =>
-            Math.Clamp(1 - Math.Exp(difficulty - _spec.ReferenceSkill), _spec.MinPredictedAcc, _spec.MaxPredictedAcc);
+        public double PredictedAccFromDifficulty(double difficulty)
+        {
+            double d = _spec.DifficultyCenter + _spec.DifficultyScale * (difficulty - _spec.DifficultyCenter);
+            return Math.Clamp(1 - Math.Exp(d - _spec.ReferenceSkill), _spec.MinPredictedAcc, _spec.MaxPredictedAcc);
+        }
 
         /// <summary>Speed-modifier shrink factor k(timescale) from the spec (1 when not calibrated).</summary>
         public double SpeedShiftScale(double timescale)
