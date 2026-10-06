@@ -1,6 +1,6 @@
 {
  "version": 1,
- "description": "Algorithmic accuracy difficulty (ML-free). Linear (ridge) model over AccDifficultyFeatures predicting the score-implied map difficulty d = log error rate; predictedAcc = 1 - exp(d - reference_skill). Fitted 2026-10-03 on 3542647 modifier-free scores / 3872 maps; song-grouped CV R2 0.958 (ML predicted acc: 0.883). reference_skill preserves the top-1000 players' PP. See Analysis/REPORT.md.",
+ "description": "Algorithmic accuracy difficulty (ML-free). Linear (ridge) model over AccDifficultyFeatures predicting the score-implied map difficulty d = log error rate; predictedAcc = 1 - exp(d - reference_skill). Fitted 2026-10-03 on 3542647 modifier-free scores / 3872 maps; song-grouped CV R2 0.958 (ML predicted acc: 0.883). reference_skill preserves the top-1000 players' PP. See Analysis/REPORT.md. Speed shifts are limited to the range confirmed by SS/FS/SF scores (99th percentile over maps with >= 15 speed scores: SS 0.241, FS 0.173, SF 0.585).",
  "features": [
   "swing_speed_mean",
   "swing_speed_p50",
@@ -333,6 +333,20 @@
   [
    1.5,
    0.6796496398813711
+  ]
+ ],
+ "speed_shift_limit": [
+  [
+   0.85,
+   0.2406
+  ],
+  [
+   1.2,
+   0.1734
+  ],
+  [
+   1.5,
+   0.585
   ]
  ]
 }

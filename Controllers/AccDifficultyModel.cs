@@ -177,6 +177,12 @@ namespace RatingAPI.Controllers
         /// k interpolated linearly in timescale (fitted on SS/FS/SF scores; the raw feature response overstates the average shift).
         /// </summary>
         [JsonPropertyName("speed_shift_scale")] public double[][]? SpeedShiftScale { get; set; }
+        /// <summary>
+        /// Points (timescale, L): the calibrated shift k * (d_mod - d_base) is clamped to [-L, L], L interpolated in timescale.
+        /// L is the range in which real SS/FS/SF scores confirmed the shift (99th percentile over maps with speed scores);
+        /// beyond it the linear model only extrapolates (e.g. SF on the hardest maps, which nobody plays at that speed).
+        /// </summary>
+        [JsonPropertyName("speed_shift_limit")] public double[][]? SpeedShiftLimit { get; set; }
     }
 
     /// <summary>
@@ -246,18 +252,23 @@ namespace RatingAPI.Controllers
         }
 
         /// <summary>Speed-modifier shrink factor k(timescale) from the spec (1 when not calibrated).</summary>
-        public double SpeedShiftScale(double timescale)
+        public double SpeedShiftScale(double timescale) => Interpolate(_spec.SpeedShiftScale, timescale) ?? 1.0;
+
+        /// <summary>Largest allowed |shift| for a timescale (null = unlimited).</summary>
+        public double? SpeedShiftLimit(double timescale) => Interpolate(_spec.SpeedShiftLimit, timescale);
+
+        /// <summary>Piecewise-linear interpolation through (x, y) points, constant beyond the ends; null without points.</summary>
+        private static double? Interpolate(double[][]? points, double x)
         {
-            var pts = _spec.SpeedShiftScale;
-            if (pts == null || pts.Length == 0) return 1.0;
-            var p = pts.OrderBy(x => x[0]).ToArray();
-            if (timescale <= p[0][0]) return p[0][1];
-            if (timescale >= p[^1][0]) return p[^1][1];
+            if (points == null || points.Length == 0) return null;
+            var p = points.OrderBy(q => q[0]).ToArray();
+            if (x <= p[0][0]) return p[0][1];
+            if (x >= p[^1][0]) return p[^1][1];
             for (int i = 1; i < p.Length; i++)
             {
-                if (timescale <= p[i][0])
+                if (x <= p[i][0])
                 {
-                    double t = (timescale - p[i - 1][0]) / (p[i][0] - p[i - 1][0]);
+                    double t = (x - p[i - 1][0]) / (p[i][0] - p[i - 1][0]);
                     return p[i - 1][1] + t * (p[i][1] - p[i - 1][1]);
                 }
             }
@@ -276,7 +287,9 @@ namespace RatingAPI.Controllers
             if (modded && baseRatings != null && baseRatings.SwingData.Count > 0)
             {
                 double d0 = PredictDifficulty(AccDifficultyFeatures.Compute(baseRatings, mapdata, bpm, 1, 1));
-                d = d0 + SpeedShiftScale(timescale) * (d - d0);
+                double shift = SpeedShiftScale(timescale) * (d - d0);
+                if (SpeedShiftLimit(timescale) is { } limit) shift = Math.Clamp(shift, -limit, limit);
+                d = d0 + shift;
             }
             return d;
         }
