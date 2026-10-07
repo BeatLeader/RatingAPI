@@ -450,7 +450,8 @@ namespace RatingAPI.Controllers
             // the algorithm calibrates speed-modifier shifts against the unmodified map's analyzer output
             var baseRatings = accModel != null && (timescale != 1 || njsMult != 1)
                 ? analyzer.GetRating(mapdata, characteristic, difficulty, (float)bpm, 1, 1) : null;
-            var algoPredictedAcc = accModel?.PredictedAcc(ratings, mapdata, bpm, timescale, njsMult, baseRatings);
+            var algoPredictedAcc = accModel?.PredictedAcc(ratings, mapdata, bpm, timescale, njsMult, baseRatings,
+                map.BeatMap?._noteJumpMovementSpeed ?? 0, map.BeatMap?._noteJumpStartBeatOffset ?? 0);
             bool useAlgo = accSource == Controllers.AccSource.Algorithm && algoPredictedAcc != null;
             var predictedAcc = useAlgo ? algoPredictedAcc!.Value : mlPredictedAcc;
             AccRating ar = new();

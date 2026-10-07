@@ -48,11 +48,28 @@ namespace RatingAPI.Controllers
                 "hand_balance", "frac_freq_gt4", "frac_freq_gt6", "frac_freq_gt8",
                 "log_swings", "swing_density", "log_len", "log_notes", "note_density", "bpm",
                 "pass", "tech", "low_note_nerf", "linear_pct", "multi_pct", "parity_errors",
+                // layout and reading, added from the score/algorithm disagreement analysis (Analysis/py/a15*.py)
+                "frac_horizontal", "frac_diagonal", "frac_cross", "frac_outer", "frac_top_row", "frac_bottom_row",
+                "jump_distance", "reaction_time", "arcs_per_note", "wall_cover", "walls_per_s",
             });
             return names.ToArray();
         }
 
-        public static double[] Compute(Ratings ratings, DifficultyV3 mapdata, double bpm, double timescale, double njsMult)
+        /// <summary>
+        /// Half jump duration (beats) and jump distance (m) as the game spawns notes (BeatmapObjectSpawnMovementData).
+        /// </summary>
+        public static (double halfJumpBeats, double jumpDistance) HalfJump(double njs, double bpm, double offset)
+        {
+            double secondsPerBeat = 60.0 / Math.Max(bpm, 1e-3), hjd = 4.0;
+            while (njs * secondsPerBeat * hjd > 17.999) hjd /= 2;
+            hjd = Math.Max(hjd + offset, 0.25);
+            return (hjd, njs * secondsPerBeat * hjd * 2);
+        }
+
+        /// <param name="infoNjs">the difficulty's NJS from Info.dat (0: median note NJS)</param>
+        /// <param name="noteJumpOffset">the difficulty's note jump start beat offset from Info.dat</param>
+        public static double[] Compute(Ratings ratings, DifficultyV3 mapdata, double bpm, double timescale, double njsMult,
+            double infoNjs = 0, double noteJumpOffset = 0)
         {
             double ts = timescale <= 0 ? 1 : timescale;
             var swings = ratings.SwingData
@@ -121,6 +138,26 @@ namespace RatingAPI.Controllers
             f["linear_pct"] = ratings.LinearPercentage;
             f["multi_pct"] = ratings.MultiPercentage;
             f["parity_errors"] = ratings.Statistics.ParityErrors;
+
+            // layout of each swing's first note (lane X 0-3, layer Y 0-2; note type 0 = left/red, 1 = right/blue)
+            f["frac_horizontal"] = Frac(s => s.Cubes[0].CutDirection is 2 or 3);
+            f["frac_diagonal"] = Frac(s => s.Cubes[0].CutDirection is >= 4 and <= 7);
+            f["frac_cross"] = Frac(s => (s.Cubes[0].Type == 0 && s.Cubes[0].X == 3) || (s.Cubes[0].Type == 1 && s.Cubes[0].X == 0));
+            f["frac_outer"] = Frac(s => s.Cubes[0].X is 0 or 3);
+            f["frac_top_row"] = Frac(s => s.Cubes[0].Y == 2);
+            f["frac_bottom_row"] = Frac(s => s.Cubes[0].Y == 0);
+
+            // reading: jump distance and reaction time in played time (NJS and BPM scaled like the analyzer's NJS feature)
+            double njs = infoNjs > 0 ? infoNjs : (n > 0 ? Quantile(swings.Select(s => (double)s.Cubes[0].Njs).OrderBy(x => x).ToArray(), 0.5) : 10);
+            var (hjd, jd) = HalfJump(njs * ts * njsMult, bpm * ts, noteJumpOffset);
+            f["jump_distance"] = jd;
+            f["reaction_time"] = hjd * 60.0 / Math.Max(bpm * ts, 1e-3);
+
+            // visual load: arcs, walls
+            double spanBeats = notes > 1 ? mapdata.Notes.Max(x => x.Beats) - mapdata.Notes.Min(x => x.Beats) : 0;
+            f["arcs_per_note"] = mapdata.Arcs.Count / (double)Math.Max(notes, 1);
+            f["wall_cover"] = Math.Min(mapdata.Walls.Sum(w => (double)Math.Max(w.DurationInBeats, 0)) / Math.Max(spanBeats, 1.0), 5.0);
+            f["walls_per_s"] = mapdata.Walls.Count / Math.Max(length, 1.0);
 
             return Names.Select(name => f[name]).ToArray();
         }
@@ -279,14 +316,15 @@ namespace RatingAPI.Controllers
         /// Predicted difficulty for a (possibly speed-modified) map. For modifiers pass the analyzer output of the
         /// unmodified map as <paramref name="baseRatings"/> so the calibrated shift can be applied.
         /// </summary>
-        public double? Difficulty(Ratings ratings, DifficultyV3 mapdata, double bpm, double timescale, double njsMult, Ratings? baseRatings = null)
+        public double? Difficulty(Ratings ratings, DifficultyV3 mapdata, double bpm, double timescale, double njsMult, Ratings? baseRatings = null,
+            double infoNjs = 0, double noteJumpOffset = 0)
         {
             if (ratings == null || ratings.SwingData.Count == 0) return null;
-            double d = PredictDifficulty(AccDifficultyFeatures.Compute(ratings, mapdata, bpm, timescale, njsMult));
+            double d = PredictDifficulty(AccDifficultyFeatures.Compute(ratings, mapdata, bpm, timescale, njsMult, infoNjs, noteJumpOffset));
             bool modded = Math.Abs(timescale - 1) > 1e-9 || Math.Abs(njsMult - 1) > 1e-9;
             if (modded && baseRatings != null && baseRatings.SwingData.Count > 0)
             {
-                double d0 = PredictDifficulty(AccDifficultyFeatures.Compute(baseRatings, mapdata, bpm, 1, 1));
+                double d0 = PredictDifficulty(AccDifficultyFeatures.Compute(baseRatings, mapdata, bpm, 1, 1, infoNjs, noteJumpOffset));
                 double shift = SpeedShiftScale(timescale) * (d - d0);
                 if (SpeedShiftLimit(timescale) is { } limit) shift = Math.Clamp(shift, -limit, limit);
                 d = d0 + shift;
@@ -295,9 +333,10 @@ namespace RatingAPI.Controllers
         }
 
         /// <summary>Predicted accuracy at the reference skill, or null when the map has no swings.</summary>
-        public double? PredictedAcc(Ratings ratings, DifficultyV3 mapdata, double bpm, double timescale, double njsMult, Ratings? baseRatings = null)
+        public double? PredictedAcc(Ratings ratings, DifficultyV3 mapdata, double bpm, double timescale, double njsMult, Ratings? baseRatings = null,
+            double infoNjs = 0, double noteJumpOffset = 0)
         {
-            var d = Difficulty(ratings, mapdata, bpm, timescale, njsMult, baseRatings);
+            var d = Difficulty(ratings, mapdata, bpm, timescale, njsMult, baseRatings, infoNjs, noteJumpOffset);
             return d == null ? null : PredictedAccFromDifficulty(d.Value);
         }
     }
