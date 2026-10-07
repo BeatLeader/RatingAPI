@@ -7,6 +7,7 @@ using Parser.Map;
 using Parser.Map.Difficulty.V3.Base;
 using RatingAPI.Utils;
 using System.Diagnostics;
+using System.Numerics;
 using System.Text.Json.Serialization;
 
 namespace RatingAPI.Controllers
@@ -42,39 +43,10 @@ namespace RatingAPI.Controllers
         public double StarRating { get; set; } = 0;
         [JsonPropertyName("lack_map_calculation")]
         public LackMapCalculation LackMapCalculation { get; set; } = new();
-        [JsonPropertyName("pointlist")]
-        public List<Point> PointList { get; set; } = new();
+        [JsonPropertyName("curve")]
+        public List<Vector2> Curve { get; set; } = new();
         [JsonPropertyName("song_length")]
         public float Length { get; set; } = 0;
-    }
-
-    public class Point
-    {
-        public double x { get; set; } = 0;
-        public double y { get; set; } = 0;
-
-        public Point()
-        {
-
-        }
-
-        public Point(double x, double y)
-        {
-            this.x = x;
-            this.y = y;
-        }
-
-        public List<Point> ToPoints(List<(double x, double y)> curve)
-        {
-            List<Point> points = new();
-
-            foreach (var p in curve)
-            {
-                points.Add(new(p.x, p.y));
-            }
-
-            return points;
-        }
     }
 
     public class RatingsController : Controller
@@ -432,15 +404,15 @@ namespace RatingAPI.Controllers
             AccRating ar = new();
             var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating);
             accRating *= ratings.LowNoteNerf;
-            Curve curve = new();
-            var pointList = curve.GetCurve(lack);
-            var star = curve.ToStars(0.96, accRating, lack, pointList);
+            Curve genCurve = new();
+            var curve = genCurve.GetCurve(lack);
+            var star = genCurve.ToStars(0.96, accRating, lack, curve);
             RatingResult result = new()
             {
                 PredictedAcc = predictedAcc,
                 AccRating = accRating,
                 LackMapCalculation = lack,
-                PointList = pointList,
+                Curve = curve,
                 StarRating = star,
                 Length = length
             };

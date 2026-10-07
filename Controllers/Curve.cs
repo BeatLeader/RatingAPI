@@ -1,67 +1,55 @@
-﻿using MathNet.Numerics.Interpolation;
+﻿using System.Numerics;
 
 namespace RatingAPI.Controllers
 {
     public class Curve
     {
-        public List<(double x, double y)> baseCurve = new()
+        public List<Vector2> baseCurve = new()
         {
-                (1.0, 7.424),
-                (0.999, 6.241),
-                (0.9975, 5.158),
-                (0.995, 4.010),
-                (0.9925, 3.241),
-                (0.99, 2.700),
-                (0.9875, 2.303),
-                (0.985, 2.007),
-                (0.9825, 1.786),
-                (0.98, 1.618),
-                (0.9775, 1.490),
-                (0.975, 1.392),
-                (0.9725, 1.315),
-                (0.97, 1.256),
-                (0.965, 1.167),
-                (0.96, 1.094),
-                (0.955, 1.039),
-                (0.95, 1.000),
-                (0.94, 0.931),
-                (0.93, 0.867),
-                (0.92, 0.813),
-                (0.91, 0.768),
-                (0.9, 0.729),
-                (0.875, 0.650),
-                (0.85, 0.581),
-                (0.825, 0.522),
-                (0.8, 0.473),
-                (0.75, 0.404),
-                (0.7, 0.345),
-                (0.65, 0.296),
-                (0.6, 0.256),
-                (0.0, 0.000)};
+            new Vector2(1.0f, 7.424f),
+            new Vector2(0.999f, 6.241f),
+            new Vector2(0.9975f, 5.158f),
+            new Vector2(0.995f, 4.010f),
+            new Vector2(0.9925f, 3.241f),
+            new Vector2(0.99f, 2.700f),
+            new Vector2(0.9875f, 2.303f),
+            new Vector2(0.985f, 2.007f),
+            new Vector2(0.9825f, 1.786f),
+            new Vector2(0.98f, 1.618f),
+            new Vector2(0.9775f, 1.490f),
+            new Vector2(0.975f, 1.392f),
+            new Vector2(0.9725f, 1.315f),
+            new Vector2(0.97f, 1.256f),
+            new Vector2(0.965f, 1.167f),
+            new Vector2(0.96f, 1.094f),
+            new Vector2(0.955f, 1.039f),
+            new Vector2(0.95f, 1.000f),
+            new Vector2(0.94f, 0.931f),
+            new Vector2(0.93f, 0.867f),
+            new Vector2(0.92f, 0.813f),
+            new Vector2(0.91f, 0.768f),
+            new Vector2(0.9f, 0.729f),
+            new Vector2(0.875f, 0.650f),
+            new Vector2(0.85f, 0.581f),
+            new Vector2(0.825f, 0.522f),
+            new Vector2(0.8f, 0.473f),
+            new Vector2(0.75f, 0.404f),
+            new Vector2(0.7f, 0.345f),
+            new Vector2(0.65f, 0.296f),
+            new Vector2(0.6f, 0.256f),
+            new Vector2(0.0f, 0.000f)
+        };
 
-        public List<Point> GetCurve(LackMapCalculation lackRatings)
+        public List<Vector2> GetCurve(LackMapCalculation lackRatings)
         {
-            List<(double x, double y)> points = new();
+            List<Vector2> curve = new(baseCurve);
 
-            /*foreach (var p in baseCurve)
-            {
-                double newY = p.y;
-
-                double buffStrength01 = GetSmoothBuffStrength(p.x, 0.94, 1);
-                double buffStrength = 0.5 + 0.5 * buffStrength01;
-                newY *= 1 + lackRatings.MultiRating * buffStrength;
-
-                points.Add(new(p.x, Math.Round(newY, 3)));
-            }*/
-            
-            Point point = new();
-            List<Point> curve = point.ToPoints(baseCurve).ToList();
-            curve = curve.OrderBy(x => x.x).Reverse().ToList();
+            // TODO: Implement logic to modify curve per map here
 
             return curve;
         }
 
-        public double ToStars(double acc, double accRating, LackMapCalculation ratings, List<Point> curve)
+        public double ToStars(double acc, double accRating, LackMapCalculation ratings, List<Vector2> curve)
         {
             double passPP = 15.2f * MathF.Exp(MathF.Pow((float)ratings.PassRating, 1 / 2.62f)) - 30f;
             if (double.IsInfinity(passPP) || double.IsNaN(passPP) || double.IsNegativeInfinity(passPP) || passPP < 0)
@@ -76,12 +64,12 @@ namespace RatingAPI.Controllers
             return pp / 52;
         }
 
-        public double Curve2(double acc, List<Point> curve)
+        public double Curve2(double acc, List<Vector2> curve)
         {
             int i = 0;
             for (; i < curve.Count; i++)
             {
-                if (curve[i].x <= acc)
+                if (curve[i].X <= acc)
                 {
                     break;
                 }
@@ -92,8 +80,8 @@ namespace RatingAPI.Controllers
                 i = 1;
             }
 
-            double middle_dis = (acc - curve[i - 1].x) / (curve[i].x - curve[i - 1].x);
-            return (float)(curve[i - 1].y + middle_dis * (curve[i].y - curve[i - 1].y));
+            double middle_dis = (acc - curve[i - 1].X) / (curve[i].X - curve[i - 1].X);
+            return (float)(curve[i - 1].Y + middle_dis * (curve[i].Y - curve[i - 1].Y));
         }
 
         private double GetSmoothBuffStrength(double x, double startTransition, double endTransition)
