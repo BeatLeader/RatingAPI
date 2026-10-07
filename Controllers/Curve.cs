@@ -4,7 +4,7 @@ namespace RatingAPI.Controllers
 {
     public class Curve
     {
-        public List<Vector2> baseCurve = new()
+        public List<Vector2> oldCurve = new()
         {
             new Vector2(1.0f, 7.424f),
             new Vector2(0.999f, 6.241f),
@@ -40,13 +40,56 @@ namespace RatingAPI.Controllers
             new Vector2(0.0f, 0.000f)
         };
 
-        public List<Vector2> GetCurve(LackMapCalculation lackRatings)
+        public static readonly float[] BaseCurveX =
         {
-            List<Vector2> curve = new(baseCurve);
+            1.0f,
+            0.999f,
+            0.9975f,
+            0.995f,
+            0.9925f,
+            0.99f,
+            0.9875f,
+            0.985f,
+            0.9825f,
+            0.98f,
+            0.9775f,
+            0.975f,
+            0.9725f,
+            0.97f,
+            0.965f,
+            0.96f,
+            0.955f,
+            0.95f,
+            0.94f,
+            0.93f,
+            0.92f,
+            0.91f,
+            0.9f,
+            0.875f,
+            0.85f,
+            0.825f,
+            0.8f,
+            0.75f,
+            0.7f,
+            0.65f,
+            0.6f,
+            0.0f
+        };
 
-            // TODO: Implement logic to modify curve per map here
+        public List<Vector2> GetBaseCurve()
+        {
+            var curve = new ModifiableCurve();
 
-            return curve;
+            return BaseCurveX
+                .Select(x => new Vector2(x, (float)curve.GetValue(x)))
+                .ToList();
+        }
+
+        public List<Vector2> GetCurve(LackMapCalculation lackRatings, double predictedAcc, double accRating)
+        {
+            List<Vector2> baseCurve = GetBaseCurve();
+
+            return baseCurve;
         }
 
         public double ToStars(double acc, double accRating, LackMapCalculation ratings, List<Vector2> curve)
@@ -84,19 +127,110 @@ namespace RatingAPI.Controllers
             return (float)(curve[i - 1].Y + middle_dis * (curve[i].Y - curve[i - 1].Y));
         }
 
-        private double GetSmoothBuffStrength(double x, double startTransition, double endTransition)
+        public class ModifiableCurve
         {
-            if (x <= startTransition)
+            // Default curve parameters from Desmos https://www.desmos.com/calculator/hlhqzmtzon
+            public double Y0 { get; set; } = 0.256;
+            public double K { get; set; } = 4.86;
+            public double W { get; set; } = 0.6;
+            public double K2 { get; set; } = 2.88;
+            public double P2 { get; set; } = 2.46;
+            public double C { get; set; } = 1.0;
+            public double A { get; set; } = 1.0;
+
+            /// <summary>
+            /// Computes the overall composite curve value g(x) for a given x input.
+            /// </summary>
+            public double GetValue(double x)
             {
-                return 0.0;
+                if (x <= 0.60)
+                {
+                    return (Y0 / 0.60) * x;
+                }
+                ;
+                if (x <= 0.95)
+                {
+                    return GetF1(x);
+                }
+                if (x <= A)
+                {
+                    return GetF2(x);
+                }
+
+                return GetL(x);
             }
-            if (x >= endTransition)
+
+            /// <summary>
+            /// Calculates the slope derivative M at x = 0.95.
+            /// </summary>
+            public double GetM()
             {
-                return 1.0;
+                double term1 = (1.0 - Y0) / 0.35;
+                double term2 = (1.0 - W) + W * (K * Math.Exp(K)) / (Math.Exp(K) - 1.0);
+                return term1 * term2;
             }
-            
-            double t = (x - startTransition) / (endTransition - startTransition);
-            return t * t * (3.0 - 2.0 * t);
+
+            /// <summary>
+            /// Computes f1(x) for 0.60 < x <= 0.95.
+            /// </summary>
+            public double GetF1(double x)
+            {
+                double u = (x - 0.6) / 0.35;
+                double blend = (1.0 - W) * u + W * (Math.Exp(K * u) - 1.0) / (Math.Exp(K) - 1.0);
+                return Y0 + (1.0 - Y0) * blend;
+            }
+
+            /// <summary>
+            /// Computes f2(x) for 0.95 < x <= a.
+            /// </summary>
+            public double GetF2(double x)
+            {
+                double m = GetM();
+                double u2 = (x - 0.95) / 0.05;
+                double expTerm = (Math.Exp(K2 * Math.Pow(u2, P2)) - 1.0) / (Math.Exp(K2) - 1.0);
+
+                return 1.0 + m * (x - 0.95) + (6.424 - 0.05 * m) * expTerm;
+            }
+
+            /// <summary>
+            /// Computes the High-Pass extension L(x) for x > a.
+            /// </summary>
+            /// <summary>
+            /// Computes the High-Pass extension L(x) for x > a.
+            /// </summary>
+            public double GetL(double x)
+            {
+                double s = GetS();
+                double s1 = s * (1.0 - C);
+                double f2A = GetF2(A);
+
+                if (Math.Abs(A - 1.0) < 1e-9)
+                {
+                    // Prevents division by zero when A = 1
+                    return f2A + s1 * (x - A);
+                }
+
+                double expTerm = 1.0 - Math.Exp(-(x - A) / (1.0 - A));
+                return f2A + s1 * (x - A) + (s - s1) * (1.0 - A) * expTerm;
+            }
+
+            /// <summary>
+            /// Calculates the slope derivative S at x = a.
+            /// </summary>
+            public double GetS()
+            {
+                double m = GetM();
+                double uA = (A - 0.95) / 0.05;
+
+                // Handle uA = 0 or negative edge cases gracefully if a < 0.95
+                double uAPower = uA > 0 ? Math.Pow(uA, P2) : 0;
+                double uAPowerMinus1 = uA > 0 ? Math.Pow(uA, P2 - 1.0) : 0;
+
+                double expTerm = Math.Exp(K2 * uAPower) / (Math.Exp(K2) - 1.0);
+                double derivativeFactor = (K2 * P2 / 0.05) * uAPowerMinus1;
+
+                return m + (6.424 - 0.05 * m) * expTerm * derivativeFactor;
+            }
         }
     }
 }

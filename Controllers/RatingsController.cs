@@ -405,7 +405,7 @@ namespace RatingAPI.Controllers
             var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating);
             accRating *= ratings.LowNoteNerf;
             Curve genCurve = new();
-            var curve = genCurve.GetCurve(lack);
+            var curve = genCurve.GetCurve(lack, predictedAcc, accRating);
             var star = genCurve.ToStars(0.96, accRating, lack, curve);
             RatingResult result = new()
             {
