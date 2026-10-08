@@ -53,6 +53,8 @@ namespace RatingAPI.Controllers
                 "jump_distance", "reaction_time", "arcs_per_note", "wall_cover", "walls_per_s",
                 // repetitive maps score better than their swing quantities imply (Analysis/py/a20_learning.py)
                 "repetition_2", "repetition_4", "repetition_8",
+                // One Saber characteristic (its difficulty level; skill sensitivity is AccModelSpec.ModeSkillScale)
+                "one_saber",
             });
             return names.ToArray();
         }
@@ -171,6 +173,7 @@ namespace RatingAPI.Controllers
                 for (int i = 0; i < sequences; i++) seen.Add(string.Join("|", tokens, i, len));
                 f[$"repetition_{len}"] = 1 - seen.Count / (double)sequences;
             }
+            f["one_saber"] = ratings.Characteristic == "OneSaber" ? 1 : 0;
 
             return Names.Select(name => f[name]).ToArray();
         }
@@ -233,6 +236,12 @@ namespace RatingAPI.Controllers
         /// beyond it the linear model only extrapolates (e.g. SF on the hardest maps, which nobody plays at that speed).
         /// </summary>
         [JsonPropertyName("speed_shift_limit")] public double[][]? SpeedShiftLimit { get; set; }
+        /// <summary>
+        /// Skill sensitivity per characteristic (default 1): log(1 - acc) = d - scale * skill. One Saber players' error rates follow their
+        /// overall skill only ~0.91x as strongly (its specialists are better at it than their overall skill says), so its predicted
+        /// accuracy at the reference skill is 1 - exp(d - scale * reference_skill); portaBLe steepens its PP curve by 1 / scale.
+        /// </summary>
+        [JsonPropertyName("mode_skill_scale")] public Dictionary<string, double>? ModeSkillScale { get; set; }
     }
 
     /// <summary>
@@ -295,10 +304,14 @@ namespace RatingAPI.Controllers
             return d;
         }
 
-        public double PredictedAccFromDifficulty(double difficulty)
+        /// <summary>Skill sensitivity of a characteristic (1 unless the spec sets one).</summary>
+        public double SkillScale(string? characteristic) =>
+            characteristic != null && _spec.ModeSkillScale != null && _spec.ModeSkillScale.TryGetValue(characteristic, out var v) ? v : 1.0;
+
+        public double PredictedAccFromDifficulty(double difficulty, string? characteristic = null)
         {
             double d = _spec.DifficultyCenter + _spec.DifficultyScale * (difficulty - _spec.DifficultyCenter);
-            return Math.Clamp(1 - Math.Exp(d - _spec.ReferenceSkill), _spec.MinPredictedAcc, _spec.MaxPredictedAcc);
+            return Math.Clamp(1 - Math.Exp(d - SkillScale(characteristic) * _spec.ReferenceSkill), _spec.MinPredictedAcc, _spec.MaxPredictedAcc);
         }
 
         /// <summary>Speed-modifier shrink factor k(timescale) from the spec (1 when not calibrated).</summary>
@@ -350,7 +363,7 @@ namespace RatingAPI.Controllers
             double infoNjs = 0, double noteJumpOffset = 0)
         {
             var d = Difficulty(ratings, mapdata, bpm, timescale, njsMult, baseRatings, infoNjs, noteJumpOffset);
-            return d == null ? null : PredictedAccFromDifficulty(d.Value);
+            return d == null ? null : PredictedAccFromDifficulty(d.Value, ratings.Characteristic);
         }
     }
 }
