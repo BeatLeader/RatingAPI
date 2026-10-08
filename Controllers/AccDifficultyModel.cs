@@ -51,6 +51,8 @@ namespace RatingAPI.Controllers
                 // layout and reading, added from the score/algorithm disagreement analysis (Analysis/py/a15*.py)
                 "frac_horizontal", "frac_diagonal", "frac_cross", "frac_outer", "frac_top_row", "frac_bottom_row",
                 "jump_distance", "reaction_time", "arcs_per_note", "wall_cover", "walls_per_s",
+                // repetitive maps score better than their swing quantities imply (Analysis/py/a20_learning.py)
+                "repetition_2", "repetition_4", "repetition_8",
             });
             return names.ToArray();
         }
@@ -158,6 +160,17 @@ namespace RatingAPI.Controllers
             f["arcs_per_note"] = mapdata.Arcs.Count / (double)Math.Max(notes, 1);
             f["wall_cover"] = Math.Min(mapdata.Walls.Sum(w => (double)Math.Max(w.DurationInBeats, 0)) / Math.Max(spanBeats, 1.0), 5.0);
             f["walls_per_s"] = mapdata.Walls.Count / Math.Max(length, 1.0);
+
+            // repetition: share of L-swing sequences (hand, lane, layer, cut direction of each swing's first note) seen earlier in the map
+            var tokens = swings.Select(s => $"{s.Cubes[0].Type}{s.Cubes[0].X}{s.Cubes[0].Y}{s.Cubes[0].CutDirection}").ToArray();
+            foreach (int len in new[] { 2, 4, 8 })
+            {
+                int sequences = tokens.Length - len + 1;
+                if (sequences < 2) { f[$"repetition_{len}"] = 0; continue; }
+                var seen = new HashSet<string>();
+                for (int i = 0; i < sequences; i++) seen.Add(string.Join("|", tokens, i, len));
+                f[$"repetition_{len}"] = 1 - seen.Count / (double)sequences;
+            }
 
             return Names.Select(name => f[name]).ToArray();
         }
