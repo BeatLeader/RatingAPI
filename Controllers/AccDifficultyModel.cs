@@ -132,7 +132,7 @@ namespace RatingAPI.Controllers
             f["note_density"] = notes / Math.Max(length, 1.0);
             f["bpm"] = bpm * ts;
 
-            f["pass"] = ratings.PassRating;
+            f["pass"] = ratings.ClassicPassRating;                              // classic rating, whatever PassModel selects
             f["tech"] = ratings.TechRating;
             f["low_note_nerf"] = ratings.LowNoteNerf;
             f["linear_pct"] = ratings.LinearPercentage;

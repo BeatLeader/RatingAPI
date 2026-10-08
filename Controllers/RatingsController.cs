@@ -108,6 +108,9 @@ namespace RatingAPI.Controllers
             // "AccModelPath": optional acc_model.json to use instead of the embedded one (e.g. an alternative calibration)
             var modelPath = configuration.GetValue<string>("AccModelPath");
             accModel = string.IsNullOrEmpty(modelPath) ? AccDifficultyModel.Default : AccDifficultyModel.LoadCached(modelPath);
+            // "PassModel": Classic (default, peak windows) or Energy (energy-bar pass rating, analyzer PassEnergy); process-wide
+            if (Enum.TryParse<Analyzer.BeatmapScanner.Algorithm.PassRatingModel>(configuration.GetValue<string>("PassModel"), true, out var passModel))
+                Analyzer.BeatmapScanner.Algorithm.PassEnergy.Model = passModel;
         }
 
         public string CustomModeMapping(string mode)
