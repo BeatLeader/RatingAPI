@@ -42,6 +42,26 @@ namespace RatingAPI.Controllers
         private static InferenceSession? _inferenceSessionSpeed;
         private static InferenceSession? _tagSession;
 
+        // Number of values per note the accuracy model expects (last input dimension):
+        // 49 for the old model, 53 for a model trained with the note-type features.
+        private static readonly Lazy<int> AccModelNoteSize = new(() =>
+        {
+            using var session = new InferenceSession(LoadEmbeddedResource("model_sleep_bl.onnx"));
+            var dims = session.InputMetadata["input_1"].Dimensions;
+            int size = dims[dims.Length - 1];
+            if (size != DataProcessing.BaseNoteSize && size != DataProcessing.BaseNoteSize + DataProcessing.NoteKindFeatures)
+            {
+                throw new InvalidOperationException($"model_sleep_bl.onnx expects {size} values per note; DataProcessing supports {DataProcessing.BaseNoteSize} or {DataProcessing.BaseNoteSize + DataProcessing.NoteKindFeatures}.");
+            }
+            return size;
+        });
+
+        public InferPublish()
+        {
+            // Build inputs in the layout the embedded model was trained with.
+            DataProcessing.UseNoteKindFeatures = AccModelNoteSize.Value == DataProcessing.BaseNoteSize + DataProcessing.NoteKindFeatures;
+        }
+
         private static byte[] LoadEmbeddedResource(string resourceName)
         {
             var assembly = Assembly.GetExecutingAssembly();
@@ -175,10 +195,11 @@ namespace RatingAPI.Controllers
             float[] flatInput = input.SelectMany(v => v.SelectMany(v => v.Select(v => (float)v))).ToArray();
             var modelInput = new List<NamedOnnxValue>
             {
-                NamedOnnxValue.CreateFromTensor("input_1", new DenseTensor<float>(flatInput, new int[] { input.Length, 32, 49 })),
+                NamedOnnxValue.CreateFromTensor("input_1", new DenseTensor<float>(flatInput, new int[] { input.Length, DataProcessing.segmentSize, DataProcessing.noteSize })),
             };
 
-            var outputs = new float[input.Length, 8];
+            int predictionSize = DataProcessing.predictionSize;
+            var outputs = new float[input.Length, predictionSize];
 
             // Remove the lock - each thread has its own session now
             using (var output = GetInferenceSessionAccNew().Run(modelInput, new[] { "time_distributed_2" }))
@@ -190,8 +211,8 @@ namespace RatingAPI.Controllers
             var listOutputs = new List<float[]>();
             for (int i = 0; i < input.Length; ++i)
             {
-                var output = new float[8];
-                for (int j = 0; j < 8; ++j)
+                var output = new float[predictionSize];
+                for (int j = 0; j < predictionSize; ++j)
                 {
                     output[j] = outputs[i, j];
                 }
@@ -231,9 +252,10 @@ namespace RatingAPI.Controllers
                 for (int j = 0; j < batchPred.Length; j++)
                 {
                     var pred = batchPred[j];
-                    var inp = batchInp.Skip(DataProcessing.preSegmentSize).Take(batchInp.Count - DataProcessing.preSegmentSize - DataProcessing.preSegmentSize).ToArray()[0];
+                    // Skip the empty padding slots at the end of the last window.
+                    var inp = batchInp[DataProcessing.preSegmentSize + j];
 
-                    if (inp.Sum() == 0.0)
+                    if (inp.All(v => v == 0.0))
                     {
                         continue;
                     }

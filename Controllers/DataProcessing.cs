@@ -1,31 +1,40 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Newtonsoft.Json;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.IO.Compression;
-using System.Linq;
-using System.Net;
-using System.Net.Http;
 
-using Newtonsoft.Json.Linq;
-using beatleader_parser;
-using beatleader_analyzer;
-using Parser.Map;
 using Parser.Map.Difficulty.V3.Grid;
 using Parser.Map.Difficulty.V3.Base;
 
 namespace RatingAPI.Controllers
 {
+    // How a note is scored, matching the scoring types BeatLeader records in replays.
+    // Must stay in sync with FEATURE_SCORING_TYPES in beatsaber-replays-ai-2/data.py.
+    public enum NoteKind
+    {
+        Normal = 0,
+        ArcHead = 1,
+        ArcTail = 2,
+        ChainHead = 3,
+        Combined = -1, // e.g. arc head + arc tail: no one-hot slot (all zeros), same as in training
+    }
+
+    public record MapNote(double Time, int X, int Y, int Direction, int Color, double Njs, NoteKind Kind);
+
     public class DataProcessing
     {
         public static int preSegmentSize = 12;
         public static int postSegmentSize = 12;
         public static int predictionSize = 8;
-        public static int noteSize = 49;
-        public static int segmentSize = preSegmentSize + postSegmentSize + predictionSize;
+
+        public const int BaseNoteSize = 49;
+        public const int NoteKindFeatures = 4;
+
+        // Set by InferPublish from the ONNX model's input size:
+        // 49 values per note = old model, 53 = model trained with the note-type features.
+        public static bool UseNoteKindFeatures = true;
+
+        public static int noteSize => BaseNoteSize + (UseNoteKindFeatures ? NoteKindFeatures : 0);
+        public static int segmentSize => preSegmentSize + postSegmentSize + predictionSize;
 
         // Dictionaries for direction to angle and angle to direction
         private static readonly Dictionary<int, int> DirectionToAngle = new Dictionary<int, int>
@@ -52,8 +61,6 @@ namespace RatingAPI.Controllers
             {315, 7}
         };
 
-        // Existing methods like PreprocessNote would be here...
-
         // Method to get the note direction
         public static int GetNoteDirection(int direction, double angle)
         {
@@ -69,23 +76,45 @@ namespace RatingAPI.Controllers
             return AngleToDirection[noteAngle];
         }
 
-        // Method to get map notes from json
-        public static List<Tuple<double, string, double>> GetMapNotesFromJson(DifficultyV3 mapdata, double bpm, List<Note> notesToIgnore = null)
+        // Same matching as the game / Parser.Utils.ScoringExtensions: a note is an arc head or tail when an arc of the
+        // same color starts or ends on it, and a chain head when a chain of the same color starts on it.
+        public static NoteKind GetNoteKind(Note note, DifficultyV3 mapdata)
         {
-            List<Tuple<double, string, double>> mapNotes = mapdata.Notes
-                    .Where(n => notesToIgnore == null || !notesToIgnore.Contains(n))
-                    .Where(n => n.x < 1000 && n.x >= 0 && n.y < 1000 && n.y >= 0)
-                    .Select(n => Tuple.Create(
-                        (double)n.Seconds,
-                        $"{n.x}{n.y}{GetNoteDirection(n.CutDirection, n.AngleOffset)}{n.Color}",
-                        (double)n.njs
-                    ))
-                    .OrderBy(x => x.Item1).ThenBy(x => x.Item2)
-                    .ToList();
-            return mapNotes;
+            bool arcHead = mapdata.Arcs.Any(a => a.Color == note.Color && a.BpmTime == note.BpmTime && a.x == note.x && a.y == note.y);
+            bool arcTail = mapdata.Arcs.Any(a => a.Color == note.Color && a.TailBpmTime == note.BpmTime && a.tx == note.x && a.ty == note.y);
+            bool chainHead = mapdata.Chains.Any(c => c.Color == note.Color && c.BpmTime == note.BpmTime && c.x == note.x && c.y == note.y);
+
+            int count = (arcHead ? 1 : 0) + (arcTail ? 1 : 0) + (chainHead ? 1 : 0);
+            if (count > 1) return NoteKind.Combined;
+            if (chainHead) return NoteKind.ChainHead;
+            if (arcHead) return NoteKind.ArcHead;
+            if (arcTail) return NoteKind.ArcTail;
+            return NoteKind.Normal;
         }
 
-        public static List<double> PreprocessNote(double delta, double deltaOther, int[] noteInfo, double njs, double timeScale)
+        // Map notes in the order the model was trained on: time, then x, y, direction, color.
+        // Chain links are not included (they are counted as free points), bombs are not notes.
+        public static List<MapNote> GetMapNotesFromJson(DifficultyV3 mapdata, double bpm, List<Note> notesToIgnore = null)
+        {
+            bool hasSliders = mapdata.Arcs.Any() || mapdata.Chains.Count > 0;
+            return mapdata.Notes
+                    .Where(n => notesToIgnore == null || !notesToIgnore.Contains(n))
+                    .Where(n => n.x < 1000 && n.x >= 0 && n.y < 1000 && n.y >= 0)
+                    .Where(n => n.Color == 0 || n.Color == 1)
+                    .Select(n => new MapNote(
+                        n.Seconds,
+                        n.x,
+                        n.y,
+                        GetNoteDirection(n.CutDirection, n.AngleOffset),
+                        n.Color,
+                        n.njs,
+                        hasSliders ? GetNoteKind(n, mapdata) : NoteKind.Normal
+                    ))
+                    .OrderBy(n => n.Time).ThenBy(n => n.X).ThenBy(n => n.Y).ThenBy(n => n.Direction).ThenBy(n => n.Color)
+                    .ToList();
+        }
+
+        public static List<double> PreprocessNote(double delta, double deltaOther, MapNote note, double njs, double timeScale)
         {
             delta /= timeScale;
             deltaOther /= timeScale;
@@ -96,10 +125,10 @@ namespace RatingAPI.Controllers
             double deltaShort = Math.Max(0, 0.5 - delta) * 2;
             double deltaOtherShort = Math.Max(0, 0.5 - deltaOther) * 2;
 
-            int colNumber = Math.Clamp(noteInfo[0], 0, 3);
-            int rowNumber = Math.Clamp(noteInfo[1], 0, 2);
-            int directionNumber = noteInfo[2];
-            int color = noteInfo[3];
+            int colNumber = Math.Clamp(note.X, 0, 3);
+            int rowNumber = Math.Clamp(note.Y, 0, 2);
+            int directionNumber = Math.Clamp(note.Direction, 0, 9);
+            int color = note.Color;
 
             double[] rowCol = new double[4 * 3];
             double[] direction = new double[10];
@@ -110,7 +139,7 @@ namespace RatingAPI.Controllers
             rowCol[colNumber * 3 + rowNumber] = 1;
             direction[directionNumber] = 1;
 
-            List<double> response = new List<double>();
+            List<double> response = new List<double>(noteSize);
 
             if (color == 0)
             {
@@ -122,7 +151,7 @@ namespace RatingAPI.Controllers
                 response.Add(deltaLong);
                 response.Add(deltaOtherShort);
                 response.Add(deltaOtherLong);
-            } else if (color == 1)
+            } else
             {
                 response.AddRange(rowCol2);
                 response.AddRange(direction2);
@@ -136,12 +165,19 @@ namespace RatingAPI.Controllers
 
             response.Add(njs / 30);
 
+            if (UseNoteKindFeatures)
+            {
+                double[] kind = new double[NoteKindFeatures];
+                if (note.Kind != NoteKind.Combined) kind[(int)note.Kind] = 1;
+                response.AddRange(kind);
+            }
+
             return response;
         }
 
-        public static Tuple<List<double[]>, List<double>> PreprocessMapNotes(List<Tuple<double, string, double>> mapNotes, double timeScale, double njsMult = 1)
+        public static Tuple<List<double[]>, List<double>> PreprocessMapNotes(List<MapNote> mapNotes, double timeScale, double njsMult = 1)
         {
-            List<List<double>> notes = new();
+            List<double[]> notes = new();
             List<double> noteTimes = new();
 
             double prevZeroNoteTime = 0;
@@ -149,95 +185,64 @@ namespace RatingAPI.Controllers
 
             foreach (var note in mapNotes)
             {
-                double noteTime = note.Item1;
-                int[] noteInfo = note.Item2.Select(s => s-'0').ToArray();
-                int type = noteInfo.Last();
-                double njs = note.Item3 * njsMult;
+                double noteTime = note.Time;
+                double njs = note.Njs * njsMult;
 
                 double deltaToZero = noteTime - prevZeroNoteTime;
                 double deltaToOne = noteTime - prevOneNoteTime;
 
-                if (deltaToZero < 0 || deltaToOne < 0)
-                {
-                    Console.WriteLine($"{deltaToZero} {deltaToOne}");
-                }
-
-                if (type == 0)
+                if (note.Color == 0)
                 {
                     prevZeroNoteTime = noteTime;
-                    List<double> noteProcessed = PreprocessNote(deltaToZero, deltaToOne, noteInfo, njs, timeScale);
-                    notes.Add(noteProcessed);
-                    noteTimes.Add(noteTime);
+                    notes.Add(PreprocessNote(deltaToZero, deltaToOne, note, njs, timeScale).ToArray());
                 }
-                if (type == 1)
+                else
                 {
                     prevOneNoteTime = noteTime;
-                    List<double> noteProcessed = PreprocessNote(deltaToOne, deltaToZero, noteInfo, njs, timeScale);
-                    notes.Add(noteProcessed);
-                    noteTimes.Add(noteTime);
+                    notes.Add(PreprocessNote(deltaToOne, deltaToZero, note, njs, timeScale).ToArray());
                 }
+                noteTimes.Add(noteTime);
             }
 
-            return new Tuple<List<double[]>, List<double>>(notes.Select(s => s.ToArray()).ToList(), noteTimes);
+            return new Tuple<List<double[]>, List<double>>(notes, noteTimes);
         }
 
+        // Windows of preSegmentSize | predictionSize | postSegmentSize notes, stepping by predictionSize so every note
+        // is predicted once. The last window is padded with empty notes (all zeros) instead of dropping the map's
+        // last notes; InferPublish skips the predictions for those padded slots.
         public List<List<double[]>> CreateSegments(List<double[]> notes)
         {
-            var emptyRes = new List<List<double[]>> { new List<double[]>(), new List<double[]>() };
-            if (notes.Count < predictionSize)
-            {
-                return emptyRes;
-            }
-
             var segments = new List<List<double[]>>();
-            for (int i = 0; i <= notes.Count - predictionSize; i++)
+            int size = noteSize;
+
+            for (int i = 0; i < notes.Count; i += predictionSize)
             {
-                if (i % predictionSize != 0)
+                var finalSegment = new List<double[]>(segmentSize);
+                for (int j = i - preSegmentSize; j < i + predictionSize + postSegmentSize; j++)
                 {
-                    continue;
+                    finalSegment.Add(j >= 0 && j < notes.Count ? notes[j] : new double[size]);
                 }
-
-                var preSlice = notes.GetRange(Math.Max(0, i - preSegmentSize), Math.Min(preSegmentSize, i));
-                var slice = notes.GetRange(i, predictionSize);
-                var postSlice = notes.GetRange(i + predictionSize, Math.Min(postSegmentSize, notes.Count - (i + predictionSize)));
-
-                var preSegment = preSlice.Select(note => note.ToArray()).ToList();
-                while (preSegment.Count < preSegmentSize)
-                {
-                    preSegment.Insert(0, new double[noteSize]);
-                }
-
-                var segment = slice.Select(note => note.ToArray()).ToList();
-
-                var postSegment = postSlice.Select(note => note.ToArray()).ToList();
-                while (postSegment.Count < postSegmentSize)
-                {
-                    postSegment.Add(new double[noteSize]);
-                }
-
-                var finalSegment = new List<double[]>();
-                finalSegment.AddRange(preSegment);
-                finalSegment.AddRange(segment);
-                finalSegment.AddRange(postSegment);
                 segments.Add(finalSegment);
             }
 
             return segments;
         }
 
+        // Chain links score a fixed 20 points each. A chain's SliceCount includes its head, which is a regular note
+        // already predicted by the model, so only SliceCount - 1 links are free points.
         public int GetFreePointsForMap(DifficultyV3 mapdata)
         {
             if (mapdata.Chains.Count == 0) return 0;
 
-            int segmentCount = 0;
+            int linkCount = 0;
             foreach (var burstSlider in mapdata.Chains)
             {
-                segmentCount += burstSlider.SliceCount;
+                linkCount += Math.Max(0, burstSlider.SliceCount - 1);
             }
-            return segmentCount * 20 * 8;
+            return linkCount * 20 * 8;
         }
 
-        public (List<Tuple<double, string, double>> mapNotes, int freePoints) GetMapData(DifficultyV3 mapdata, double bpm, List<Note> notesToIgnore = null)
+        public (List<MapNote> mapNotes, int freePoints) GetMapData(DifficultyV3 mapdata, double bpm, List<Note> notesToIgnore = null)
         {
             var mapNotes = GetMapNotesFromJson(mapdata, bpm, notesToIgnore);
             var freePoints = GetFreePointsForMap(mapdata);
@@ -248,7 +253,7 @@ namespace RatingAPI.Controllers
         {
             var emptyResponse = (new List<List<double[]>>(), new List<double>(), 0);
             var (mapNotes, freePoints) = GetMapData(mapdata, bpm, notesToIgnore);
-            if (mapNotes == null)
+            if (mapNotes == null || mapNotes.Count == 0)
             {
                 return emptyResponse;
             }

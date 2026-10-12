@@ -149,6 +149,32 @@ namespace RatingAPI.Controllers
             return results;
         }
 
+        // Ratings without modifiers only. Same as Get(...)["none"], without rating the other modifier combinations.
+        [NonAction]
+        public RatingResult? GetNoModifiers(string hash, string mode, int diff)
+        {
+            var difficulty = FormattingUtils.GetDiffLabel(diff);
+            var mapPath = downloader.Map(hash);
+            if (mapPath == null) return null;
+            BeatmapV3? mapset;
+            try
+            {
+                mapset = parser.TryLoadPath(mapPath);
+            }
+            catch (FileNotFoundException)
+            {
+                Directory.Delete(mapPath, true);
+                mapPath = downloader.Map(hash);
+                if (mapPath == null) return null;
+                mapset = parser.TryLoadPath(mapPath);
+            }
+            if (mapset == null) return null;
+
+            var map = mapset.Difficulties.FirstOrDefault(d => d.Characteristic == CustomModeMapping(mode) && (d.BeatMap._difficultyRank == diff || d.BeatMap._difficulty == difficulty));
+            if (map == null) return null;
+            return GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, 1);
+        }
+
         [HttpGet("~/ppai2/link/{mode}/{diff}")]
         public ActionResult<Dictionary<string, RatingResult>> GetByLink(string mode, int diff, [FromQuery] string link)
         {
