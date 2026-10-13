@@ -38,12 +38,17 @@
                 (0.0, 0.000)
         };
 
+        // acc rating = ACC_SCALE / Curve(predictedAcc + ACC_OFFSET). portaBLe's balance tuner (Balance Tuning page) suggests
+        // ACC_OFFSET; ACC_SCALE is its reference. portaBLe's ReplayUtils.AccRating uses this class, so change them here only.
+        public const double ACC_SCALE = 15.5;
+        public const double ACC_OFFSET = 0.0019;
+
         public double GetRating(double? predictedAcc, double? passRating, double? techRating)
         {
             double difficulty_to_acc;
             if (predictedAcc > 0)
             {
-                difficulty_to_acc = 15.5f / Curve((predictedAcc ?? 0) + 0.0022f);
+                difficulty_to_acc = ACC_SCALE / Curve((predictedAcc ?? 0) + ACC_OFFSET);
             }
             else
             {
