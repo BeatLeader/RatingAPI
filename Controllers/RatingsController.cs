@@ -22,8 +22,6 @@ namespace RatingAPI.Controllers
 
         [JsonPropertyName("balanced_tech")]
         public double TechRating { get; set; } = 0;
-        [JsonPropertyName("low_note_nerf")]
-        public double LowNoteNerf { get; set; } = 0;
         [JsonPropertyName("multi_percentage")]
         public double MultiPercentage { get; set; } = 0;
         [JsonPropertyName("linear_percentage")]
@@ -298,7 +296,6 @@ namespace RatingAPI.Controllers
                     {
                         PassRating = item.Pass / 5,
                         TechRating = item.Tech * (-(Math.Pow(1.4, -(item.Pass / 5))) + 1) * 10 / 5,
-                        LowNoteNerf = ratings.Nerf
                     };
 
                     note.Tech = (float)lack.TechRating;
@@ -432,7 +429,6 @@ namespace RatingAPI.Controllers
             {
                 PassRating = ratings.PassRating,
                 TechRating = ratings.TechRating,
-                LowNoteNerf = ratings.LowNoteNerf,
                 MultiPercentage = ratings.MultiPercentage,
                 LinearPercentage = ratings.LinearPercentage,
                 Statistics = ratings.Statistics,
@@ -448,7 +444,6 @@ namespace RatingAPI.Controllers
             var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult);
             AccRating ar = new();
             var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating);
-            accRating *= ratings.LowNoteNerf;
             Curve curve = new();
             // Per-map curve (base curve up to the predicted acc + CurveSettings.AOffset, tapered above); stars use the base curve
             var pointList = curve.GetCurve(lack, predictedAcc);
