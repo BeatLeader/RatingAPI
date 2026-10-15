@@ -108,7 +108,8 @@
         public double ToStars(double acc, double accRating, LackMapCalculation ratings, List<Point> curve)
         {
             curve = GetCurve(ratings);
-            double passPP = 15.2f * MathF.Exp(MathF.Pow((float)ratings.PassRating, 1 / 2.62f)) - 30f;
+            // Pass pp uses the internal pass, not the displayed one
+            double passPP = 15.2f * MathF.Exp(MathF.Pow((float)global::beatleader_analyzer.BeatmapScanner.Data.Ratings.InternalPass(ratings.PassRating), 1 / 2.62f)) - 30f;
             if (double.IsInfinity(passPP) || double.IsNaN(passPP) || double.IsNegativeInfinity(passPP) || passPP < 0)
             {
                 passPP = 0;

@@ -443,7 +443,8 @@ namespace RatingAPI.Controllers
 
             var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult);
             AccRating ar = new();
-            var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating);
+            // The acc rating formula uses the internal pass, not the displayed one
+            var accRating = ar.GetRating(predictedAcc, global::beatleader_analyzer.BeatmapScanner.Data.Ratings.InternalPass(ratings.PassRating), ratings.TechRating);
             Curve curve = new();
             // Per-map curve (base curve up to the predicted acc + CurveSettings.AOffset, tapered above); stars use the base curve
             var pointList = curve.GetCurve(lack, predictedAcc);
