@@ -134,6 +134,14 @@ namespace RatingAPI.Controllers
         [HttpGet("~/ppai2/{hash}/{mode}/{diff}")]
         public ActionResult<Dictionary<string, RatingResult>> Get(string hash, string mode, int diff)
         {
+            return Get(hash, mode, diff, null);
+        }
+
+        // only: the modifiers to rate (null = all of them). portaBLe's RatingsRefresh.Overwrite only stores none, SS, FS and
+        // SFS, so it skips BFS / BSF (a third of the work: every modifier runs the Analyzer and the Acc AI again).
+        [NonAction]
+        public ActionResult<Dictionary<string, RatingResult>> Get(string hash, string mode, int diff, IReadOnlyCollection<string>? only)
+        {
             Stopwatch sw = Stopwatch.StartNew();
             var modifiers = new List<(string, double)>() {
                 ("SS", 0.85),
@@ -147,23 +155,33 @@ namespace RatingAPI.Controllers
             var difficulty = FormattingUtils.GetDiffLabel(diff);
             var mapPath = downloader.Map(hash);
             if (mapPath == null) return NotFound();
+            DifficultySet? Find(BeatmapV3? set) => set?.Difficulties.FirstOrDefault(d => d.Characteristic == CustomModeMapping(mode) && (d.BeatMap._difficultyRank == diff || d.BeatMap._difficulty == difficulty));
             BeatmapV3? mapset = null;
+            DifficultySet? map = null;
             try
             {
-                mapset = parser.TryLoadPath(mapPath);
+                // Only the requested difficulty is parsed (a mapset can have 5+ difficulties); the whole set is the fallback
+                mapset = parser.TryLoadPath(mapPath, CustomModeMapping(mode), difficulty);
+                map = Find(mapset);
+                if (map == null)
+                {
+                    mapset = parser.TryLoadPath(mapPath);
+                    map = Find(mapset);
+                }
             }
             catch (FileNotFoundException e)
             {
                 Directory.Delete(mapPath, true);
                 mapPath = downloader.Map(hash);
                 mapset = parser.TryLoadPath(mapPath);
+                map = Find(mapset);
             }
             if (mapset != null)
             {
-                var map = mapset.Difficulties.FirstOrDefault(d => d.Characteristic == CustomModeMapping(mode) && (d.BeatMap._difficultyRank == diff || d.BeatMap._difficulty == difficulty));
                 if (map == null) return results;
                 foreach ((var name, var timescale) in modifiers)
                 {
+                    if (only != null && !only.Contains(name)) continue;
                     var njsMult = 1.0;
                     if (name == "BFS" || name == "BSF")
                     {
@@ -427,7 +445,6 @@ namespace RatingAPI.Controllers
             var length = end - start;
             if (start == 9999 || end == 0) length = 0;
 
-            
             var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult);
             AccRating ar = new();
             var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating);

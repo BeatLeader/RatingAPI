@@ -23,7 +23,9 @@ namespace RatingAPI.Controllers
 
     public class InferPublish
     {
-        private const int BatchSize = 4;
+        // Windows per ONNX call. Each call has a fixed cost, so a whole map in a few calls is much faster than 4 at a time
+        // (the results are the same: every window is predicted on its own).
+        private const int BatchSize = 512;
         private const int NumThreads = 1; // Reduce per-session threads since we'll have multiple sessions
         private const int preSegmentSize = 12;
         private const int postSegmentSize = 12;
