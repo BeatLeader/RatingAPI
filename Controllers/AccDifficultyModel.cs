@@ -55,6 +55,9 @@ namespace RatingAPI.Controllers
                 "repetition_2", "repetition_4", "repetition_8",
                 // One Saber characteristic (its difficulty level; skill sensitivity is AccModelSpec.ModeSkillScale)
                 "one_saber",
+                // One Saber only (zero on other characteristics): crossovers and outer-column notes are hard with two sabers but
+                // normal one-saber movement, so the Standard weights over-rate One Saber maps that use them (Analysis/py v7 notes)
+                "os_frac_cross", "os_frac_outer",
             });
             return names.ToArray();
         }
@@ -174,6 +177,8 @@ namespace RatingAPI.Controllers
                 f[$"repetition_{len}"] = 1 - seen.Count / (double)sequences;
             }
             f["one_saber"] = ratings.Characteristic == "OneSaber" ? 1 : 0;
+            f["os_frac_cross"] = f["one_saber"] * f["frac_cross"];
+            f["os_frac_outer"] = f["one_saber"] * f["frac_outer"];
 
             return Names.Select(name => f[name]).ToArray();
         }
