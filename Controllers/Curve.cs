@@ -258,7 +258,7 @@
             new CurveRow { PredictedAcc = 0.970, A = 0.986,   C = -2.20, K = 4.70, W = 0.62, K2 = 4.20, P2 = 2.05 },
             new CurveRow { PredictedAcc = 0.975, A = 0.985,   C = -1.80, K = 4.86, W = 0.60, K2 = 3.80, P2 = 2.15 },
             new CurveRow { PredictedAcc = 0.980, A = 0.985,   C = -1.40, K = 4.86, W = 0.60, K2 = 3.35, P2 = 2.30 },
-            new CurveRow { PredictedAcc = 0.985, A = 0.985,   C = -1.00, K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46 },
+            new CurveRow { PredictedAcc = 0.985, A = 0.985,   C = -1.20, K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46 },
             new CurveRow { PredictedAcc = 0.990, A = 0.9915,  C = -1.20, K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46 },
             new CurveRow { PredictedAcc = 0.995, A = 0.9915,  C = -1.20, K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46 },
         };
