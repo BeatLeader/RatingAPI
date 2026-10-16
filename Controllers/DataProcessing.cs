@@ -114,11 +114,17 @@ namespace RatingAPI.Controllers
                     .ToList();
         }
 
+        // Share of a speed modifier applied to the NJS input (see PreprocessNote)
+        public const double NJS_SPEED_SHARE = 0.75;
+
         public static List<double> PreprocessNote(double delta, double deltaOther, MapNote note, double njs, double timeScale)
         {
             delta /= timeScale;
             deltaOther /= timeScale;
-            njs *= timeScale;
+            // Speed modifiers scale the NJS the model sees by only part of the speed: 75% (SFS x1.375, FS x1.15, SS x0.8875).
+            // The full speed (x1.5 on SFS) predicted SFS acc too low; none at all (base NJS) made SFS scores worth about 6.5%
+            // less than the same players' no-mod scores of the same stars. 75% puts SFS and FS at about 0 (portaBLe score check).
+            njs *= 1 + NJS_SPEED_SHARE * (timeScale - 1);
 
             double deltaLong = Math.Max(0, 2 - delta) / 2;
             double deltaOtherLong = Math.Max(0, 2 - deltaOther) / 2;

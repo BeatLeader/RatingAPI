@@ -44,6 +44,9 @@ namespace RatingAPI.Controllers
         public List<Point> PointList { get; set; } = new();
         [JsonPropertyName("song_length")]
         public float Length { get; set; } = 0;
+        // Base NJS of the difficulty from Info.dat (the speed modifier isn't applied)
+        [JsonPropertyName("njs")]
+        public float Njs { get; set; } = 0;
     }
 
     public class Point
@@ -456,7 +459,8 @@ namespace RatingAPI.Controllers
                 LackMapCalculation = lack,
                 PointList = pointList,
                 StarRating = star,
-                Length = length
+                Length = length,
+                Njs = map.BeatMap?._noteJumpMovementSpeed ?? 0
             };
             return result;
         }

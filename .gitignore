@@ -6,3 +6,9 @@ obj
 Properties/PublishProfiles/*
 /azstorage
 .csproj.user
+/model_sleep_bl_replays_sf.csv
+/model_sleep_bl_replays_sf_njs-30.csv
+/model_sleep_bl_replays_sf_njs-30_vs_nomods.csv
+/model_sleep_bl_replays_sf_njs-base.csv
+/model_sleep_bl_replays_sf_njs-base_vs_nomods.csv
+/model_sleep_bl_replays_sf_vs_nomods.csv

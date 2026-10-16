@@ -16,6 +16,15 @@
     <None Remove="Analyzer\**" />
     <None Remove="Parser\**" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="model_sleep_bl_replays_sf.csv" />
+    <None Remove="model_sleep_bl_replays_sf_njs-30.csv" />
+    <None Remove="model_sleep_bl_replays_sf_njs-30_vs_nomods.csv" />
+    <None Remove="model_sleep_bl_replays_sf_njs-base.csv" />
+    <None Remove="model_sleep_bl_replays_sf_njs-base_vs_nomods.csv" />
+    <None Remove="model_sleep_bl_replays_sf_vs_nomods.csv" />
+  </ItemGroup>
 	
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
