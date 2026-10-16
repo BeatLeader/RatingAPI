@@ -242,6 +242,8 @@
     // curve more tightly while cutting the extreme tail, without nerfing the overall amount.
     // The 99.5% row isn't from the first values: without it the 99% row also applied above 99%, which cut the curve value
     // at the predicted acc of <2* maps by 19%; with it, by 6%.
+    // Table values updated 2026-10-16 (A, C and the shape K, W, K2, P2 on every row; the 96-97.5% rows now ease back to the
+    // default shape by 97.5-98.5% instead of 97%). The simulation below is for the previous table.
     // Simulated on all ranked scores (without the 99.5% row): scores above 800pp 246 -> 31, #1 vs #2 on the top maps +7.7%
     // -> +5.1%, the #1 player -7%, the top 100 -1.4%, map worth unchanged from 96.5% to 99% predicted acc.
     public class CurveSettings
@@ -250,15 +252,15 @@
 
         public List<CurveRow> Table { get; set; } = new()
         {
-            new CurveRow { PredictedAcc = 0.955, A = 1.0,    C = -5.3 },
-            new CurveRow { PredictedAcc = 0.960, A = 0.98,   C = -5.3, K = 4.1, W = 0.7, K2 = 6, P2 = 1.4 },
-            new CurveRow { PredictedAcc = 0.965, A = 0.976,  C = -5.3, K2 = 4, P2 = 2.37 },
-            new CurveRow { PredictedAcc = 0.970, A = 0.968,  C = -2 },
-            new CurveRow { PredictedAcc = 0.975, A = 0.97,   C = -1.7 },
-            new CurveRow { PredictedAcc = 0.980, A = 0.977,  C = -1.4 },
-            new CurveRow { PredictedAcc = 0.985, A = 0.98,   C = -1.4 },
-            new CurveRow { PredictedAcc = 0.990, A = 0.985,  C = -0.6 },
-            new CurveRow { PredictedAcc = 0.995, A = 0.9915, C = -0.6 },
+            new CurveRow { PredictedAcc = 0.955, A = 1.0,     C = -5.30, K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46 },
+            new CurveRow { PredictedAcc = 0.960, A = 0.99,    C = -3.00, K = 4.30, W = 0.66, K2 = 4.80, P2 = 1.85 },
+            new CurveRow { PredictedAcc = 0.965, A = 0.988,   C = -2.40, K = 4.50, W = 0.64, K2 = 4.50, P2 = 1.95 },
+            new CurveRow { PredictedAcc = 0.970, A = 0.986,   C = -2.20, K = 4.70, W = 0.62, K2 = 4.20, P2 = 2.05 },
+            new CurveRow { PredictedAcc = 0.975, A = 0.985,   C = -1.80, K = 4.86, W = 0.60, K2 = 3.80, P2 = 2.15 },
+            new CurveRow { PredictedAcc = 0.980, A = 0.985,   C = -1.40, K = 4.86, W = 0.60, K2 = 3.35, P2 = 2.30 },
+            new CurveRow { PredictedAcc = 0.985, A = 0.985,   C = -1.00, K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46 },
+            new CurveRow { PredictedAcc = 0.990, A = 0.9915,  C = -0.60, K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46 },
+            new CurveRow { PredictedAcc = 0.995, A = 0.9915,  C = -0.60, K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46 },
         };
 
         // C never goes above 1 (the curve would go down)
