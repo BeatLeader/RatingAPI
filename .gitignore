@@ -12,3 +12,4 @@ Properties/PublishProfiles/*
 /model_sleep_bl_replays_sf_njs-base.csv
 /model_sleep_bl_replays_sf_njs-base_vs_nomods.csv
 /model_sleep_bl_replays_sf_vs_nomods.csv
+/model_sleep_bl_v2.onnx
