@@ -57,37 +57,57 @@
         // using it directly would raise most acc pp). Never above the base curve. Only map data is used, never scores.
         public List<Point> GetCurve(LackMapCalculation lackRatings, double predictedAcc)
         {
-            var settings = CurveSettings.Current;
-            if (!settings.Enabled || predictedAcc <= 0.6 || predictedAcc >= 0.9995)
+            var curves = PerMapCurves(predictedAcc);
+            if (curves == null)
             {
                 return GetCurve(lackRatings);
             }
-            var row = settings.ParamsAt(predictedAcc);
-            if (row.IsDefault)
-            {
-                return GetCurve(lackRatings);
-            }
-            double a = Math.Max(row.A, 0.951);
-            var modified = new ModifiableCurve { A = Math.Min(a, 1.0), C = row.C, K = row.K, W = row.W, K2 = row.K2, P2 = row.P2 };
-            var standard = new ModifiableCurve();
+            double a = curves.Value.modified.A;
 
             // Base table points, 0.5% steps from 60% to 95%, 0.05% steps from 95% to 100%, and A
             var xs = BaseTable.Select(p => p.x)
                 .Concat(Enumerable.Range(0, 71).Select(i => 0.6 + i * 0.005))
                 .Concat(Enumerable.Range(0, 101).Select(i => 0.95 + i * 0.0005))
-                .Append(Math.Min(a, 1.0))
+                .Append(a)
                 .Select(x => Math.Round(x, 6))
                 .Where(x => x >= 0 && x <= 1)
                 .Distinct()
                 .OrderByDescending(x => x);
 
-            return xs.Select(x =>
+            return xs.Select(x => new Point(x, PerMapValue(curves.Value, x))).ToList();
+        }
+
+        // Value of the per-map curve (GetCurve above) at acc, computed directly instead of from the sampled points.
+        // Used by the acc rating (AccRating.Curve).
+        public static double PerMapValue(double predictedAcc, double acc)
+        {
+            var curves = PerMapCurves(predictedAcc);
+            return curves == null ? BaseValue(acc) : PerMapValue(curves.Value, acc);
+        }
+
+        // The modified and default ModifiableCurve of a map, null when it gets the base curve
+        private static (ModifiableCurve modified, ModifiableCurve standard)? PerMapCurves(double predictedAcc)
+        {
+            var settings = CurveSettings.Current;
+            if (!settings.Enabled || predictedAcc <= 0.6 || predictedAcc >= 0.9995)
             {
-                double baseValue = BaseValue(x);
-                double reference = standard.GetValue(x);
-                double value = reference > 0 ? baseValue * modified.GetValue(x) / reference : baseValue;
-                return new Point(x, Math.Min(baseValue, value));
-            }).ToList();
+                return null;
+            }
+            var row = settings.ParamsAt(predictedAcc);
+            if (row.IsDefault)
+            {
+                return null;
+            }
+            double a = Math.Min(Math.Max(row.A, 0.951), 1.0);
+            return (new ModifiableCurve { A = a, C = row.C, K = row.K, W = row.W, K2 = row.K2, P2 = row.P2 }, new ModifiableCurve());
+        }
+
+        private static double PerMapValue((ModifiableCurve modified, ModifiableCurve standard) curves, double x)
+        {
+            double baseValue = BaseValue(x);
+            double reference = curves.standard.GetValue(x);
+            double value = reference > 0 ? baseValue * curves.modified.GetValue(x) / reference : baseValue;
+            return Math.Min(baseValue, value);
         }
 
         public static double BaseValue(double acc)

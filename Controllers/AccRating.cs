@@ -2,45 +2,9 @@
 {
     public class AccRating
     {
-        public List<(double, double)> PointList { get; set; } = new()
-        {
-                (1.0, 7.424),
-                (0.999, 6.241),
-                (0.9975, 5.158),
-                (0.995, 4.010),
-                (0.9925, 3.241),
-                (0.99, 2.700),
-                (0.9875, 2.303),
-                (0.985, 2.007),
-                (0.9825, 1.786),
-                (0.98, 1.618),
-                (0.9775, 1.490),
-                (0.975, 1.392),
-                (0.9725, 1.315),
-                (0.97, 1.256),
-                (0.965, 1.167),
-                (0.96, 1.101),
-                (0.955, 1.047),
-                (0.95, 1.000),
-                (0.94, 0.919),
-                (0.93, 0.847),
-                (0.92, 0.786),
-                (0.91, 0.734),
-                (0.9, 0.692),
-                (0.875, 0.606),
-                (0.85, 0.537),
-                (0.825, 0.480),
-                (0.8, 0.429),
-                (0.75, 0.345),
-                (0.7, 0.286),
-                (0.65, 0.246),
-                (0.6, 0.217),
-                (0.0, 0.000)
-        };
-
         // acc rating = ACC_SCALE / Curve(EffectiveAcc(predictedAcc) + ACC_OFFSET). portaBLe's balance tuner (Balance Tuning page) suggests
         // ACC_OFFSET; ACC_SCALE is its reference. portaBLe's ReplayUtils.AccRating uses this class, so change them here only.
-        public const double ACC_SCALE = 15.5;
+        public const double ACC_SCALE = 15.1;
         public const double ACC_OFFSET = 0.0019;
 
         // Hard map correction. Below HARD_MAP_KNEE predicted acc, top players fall further behind the Acc AI's prediction
@@ -63,7 +27,7 @@
             double difficulty_to_acc;
             if (predictedAcc > 0)
             {
-                difficulty_to_acc = ACC_SCALE / Curve(EffectiveAcc(predictedAcc ?? 0) + ACC_OFFSET);
+                difficulty_to_acc = ACC_SCALE / Curve(predictedAcc ?? 0, EffectiveAcc(predictedAcc ?? 0) + ACC_OFFSET);
             }
             else
             {
@@ -77,24 +41,7 @@
             return difficulty_to_acc;
         }
 
-        public float Curve(double acc)
-        {
-            int i = 0;
-            for (; i < PointList.Count; i++)
-            {
-                if (PointList[i].Item1 <= acc)
-                {
-                    break;
-                }
-            }
-
-            if (i == 0)
-            {
-                i = 1;
-            }
-
-            double middle_dis = (acc - PointList[i - 1].Item1) / (PointList[i].Item1 - PointList[i - 1].Item1);
-            return (float)(PointList[i - 1].Item2 + middle_dis * (PointList[i].Item2 - PointList[i - 1].Item2));
-        }
+        // The map's own per-map acc curve (ModifiableCurve, see Curve.GetCurve), picked by its predicted acc, at acc
+        public static float Curve(double predictedAcc, double acc) => (float)Controllers.Curve.PerMapValue(predictedAcc, acc);
     }
 }
