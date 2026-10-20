@@ -29,6 +29,8 @@ namespace RatingAPI.Controllers
         // Sliders and curved sliders per swing (the per-map curve's slider tilt, CurveSettings.SliderTilt)
         [JsonPropertyName("slider_percentage")]
         public double SliderPercentage { get; set; } = 0;
+        // Analyzer Ratings.HitDistance (used by the acc rating)
+        public double HitDistance { get; set; } = 0;
         [JsonPropertyName("statistics")]
         public Statistics Statistics { get; set; } = new Statistics();
     }
@@ -39,8 +41,6 @@ namespace RatingAPI.Controllers
         public double PredictedAcc { get; set; } = 0;
         [JsonPropertyName("acc_rating")]
         public double AccRating { get; set; } = 0;
-        [JsonPropertyName("star_rating")]
-        public double StarRating { get; set; } = 0;
         [JsonPropertyName("lack_map_calculation")]
         public LackMapCalculation LackMapCalculation { get; set; } = new();
         [JsonPropertyName("pointlist")]
@@ -439,6 +439,7 @@ namespace RatingAPI.Controllers
                 LinearPercentage = ratings.LinearPercentage,
                 SliderPercentage = Curve.SliderPercentage(ratings),
                 Statistics = ratings.Statistics,
+                HitDistance = ratings.HitDistance,
             };
 
             var start = map.Data.Notes.OrderBy(x => x.Seconds).FirstOrDefault()?.Seconds ?? 9999;
@@ -450,19 +451,16 @@ namespace RatingAPI.Controllers
 
             var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult);
             AccRating ar = new();
-            // The acc rating formula uses the internal pass, not the displayed one
-            var accRating = ar.GetRating(predictedAcc, global::beatleader_analyzer.BeatmapScanner.Data.Ratings.InternalPass(ratings.PassRating), ratings.TechRating);
+            var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating, ratings.HitDistance);
             Curve curve = new();
             // Per-map curve (base curve up to the predicted acc + CurveSettings.AOffset, tapered above); stars use the base curve
             var pointList = curve.GetCurve(lack, predictedAcc);
-            var star = curve.ToStars(0.96, accRating, lack, pointList);
             RatingResult result = new()
             {
                 PredictedAcc = predictedAcc,
                 AccRating = accRating,
                 LackMapCalculation = lack,
                 PointList = pointList,
-                StarRating = star,
                 Length = length,
                 Njs = map.BeatMap?._noteJumpMovementSpeed ?? 0
             };

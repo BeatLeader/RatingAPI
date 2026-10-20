@@ -146,45 +146,6 @@
             return BaseTable[i - 1].y + middle_dis * (BaseTable[i].y - BaseTable[i - 1].y);
         }
 
-        // Stars always use the base curve, whatever curve the map gets: the per-map curve changes how scores above the
-        // predicted acc are rewarded, not how difficult the map is rated. (The curve parameter is kept for callers.)
-        public double ToStars(double acc, double accRating, LackMapCalculation ratings, List<Point> curve)
-        {
-            curve = GetCurve(ratings);
-            // Pass pp uses the internal pass, not the displayed one
-            double passPP = 15.2f * MathF.Exp(MathF.Pow((float)global::beatleader_analyzer.BeatmapScanner.Data.Ratings.InternalPass(ratings.PassRating), 1 / 2.62f)) - 30f;
-            if (double.IsInfinity(passPP) || double.IsNaN(passPP) || double.IsNegativeInfinity(passPP) || passPP < 0)
-            {
-                passPP = 0;
-            }
-            double accPP = Curve2(acc, curve) * accRating * 34f;
-            double techPP = MathF.Exp((float)(1.9 * acc)) * 1.08f * ratings.TechRating;
-
-            double pp = 650f * MathF.Pow((float)(passPP + accPP + techPP), 1.3f) / MathF.Pow(650f, 1.3f);
-
-            return pp / 52;
-        }
-
-        public double Curve2(double acc, List<Point> curve)
-        {
-            int i = 0;
-            for (; i < curve.Count; i++)
-            {
-                if (curve[i].x <= acc)
-                {
-                    break;
-                }
-            }
-
-            if (i == 0)
-            {
-                i = 1;
-            }
-
-            double middle_dis = (acc - curve[i - 1].x) / (curve[i].x - curve[i - 1].x);
-            return (float)(curve[i - 1].y + middle_dis * (curve[i].y - curve[i - 1].y));
-        }
-
         // From the AccCurvePerMap branch. Default curve parameters from Desmos https://www.desmos.com/calculator/hlhqzmtzon
         // Only GetF2 (to join the base curve at A) and the extension above A (GetL) are used here.
         public class ModifiableCurve
