@@ -114,18 +114,13 @@ namespace RatingAPI.Controllers
                     .ToList();
         }
 
-        // Share of a speed modifier applied to the NJS input (see PreprocessNote)
+        // Share of the in-game NJS change the model sees (see PreprocessMapNotes)
         public const double NJS_SPEED_SHARE = 0.75;
 
         public static List<double> PreprocessNote(double delta, double deltaOther, MapNote note, double njs, double timeScale)
         {
             delta /= timeScale;
             deltaOther /= timeScale;
-            // Speed modifiers scale the NJS the model sees by only part of the speed: 75% (SFS x1.375, FS x1.15, SS x0.8875).
-            // The full speed (x1.5 on SFS) predicted SFS acc too low; none at all (base NJS) made SFS scores worth about 6.5%
-            // less than the same players' no-mod scores of the same stars. 75% puts SFS and FS at about 0 (portaBLe score check).
-            njs *= 1 + NJS_SPEED_SHARE * (timeScale - 1);
-
             double deltaLong = Math.Max(0, 2 - delta) / 2;
             double deltaOtherLong = Math.Max(0, 2 - deltaOther) / 2;
             double deltaShort = Math.Max(0, 0.5 - delta) * 2;
@@ -192,7 +187,11 @@ namespace RatingAPI.Controllers
             foreach (var note in mapNotes)
             {
                 double noteTime = note.Time;
-                double njs = note.Njs * njsMult;
+                // The model sees only part of the in-game NJS change (speed, times njsMult for the half-NJS BFS / BSF):
+                // 75% (SFS x1.375, FS x1.15, SS x0.8875, BSF x1.1875, BFS x1.075). The full change (x1.5 on SFS) predicted
+                // SFS acc too low; none at all (base NJS) made SFS scores worth about 6.5% less than the same players' no-mod
+                // scores of the same stars. 75% puts SFS and FS at about 0 (portaBLe score check, Refresh/Tools/modifier_check.py).
+                double njs = note.Njs * (1 + NJS_SPEED_SHARE * (njsMult * timeScale - 1));
 
                 double deltaToZero = noteTime - prevZeroNoteTime;
                 double deltaToOne = noteTime - prevOneNoteTime;

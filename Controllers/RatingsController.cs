@@ -26,6 +26,9 @@ namespace RatingAPI.Controllers
         public double MultiPercentage { get; set; } = 0;
         [JsonPropertyName("linear_percentage")]
         public double LinearPercentage { get; set; } = 0;
+        // Sliders and curved sliders per swing (the per-map curve's slider tilt, CurveSettings.SliderTilt)
+        [JsonPropertyName("slider_percentage")]
+        public double SliderPercentage { get; set; } = 0;
         [JsonPropertyName("statistics")]
         public Statistics Statistics { get; set; } = new Statistics();
     }
@@ -434,6 +437,7 @@ namespace RatingAPI.Controllers
                 TechRating = ratings.TechRating,
                 MultiPercentage = ratings.MultiPercentage,
                 LinearPercentage = ratings.LinearPercentage,
+                SliderPercentage = Curve.SliderPercentage(ratings),
                 Statistics = ratings.Statistics,
             };
 

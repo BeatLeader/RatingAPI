@@ -58,11 +58,12 @@
         public List<Point> GetCurve(LackMapCalculation lackRatings, double predictedAcc)
         {
             var curves = PerMapCurves(predictedAcc);
-            if (curves == null)
+            double tilt = SliderTilt(lackRatings, predictedAcc);
+            if (curves == null && tilt == 0)
             {
                 return GetCurve(lackRatings);
             }
-            double a = curves.Value.modified.A;
+            double a = curves?.modified.A ?? 1.0;
 
             // Base table points, 0.5% steps from 60% to 95%, 0.05% steps from 95% to 100%, and A
             var xs = BaseTable.Select(p => p.x)
@@ -74,7 +75,29 @@
                 .Distinct()
                 .OrderByDescending(x => x);
 
-            return xs.Select(x => new Point(x, PerMapValue(curves.Value, x))).ToList();
+            return xs.Select(x =>
+            {
+                double value = curves == null ? BaseValue(x) : PerMapValue(curves.Value, x);
+                if (tilt != 0)
+                {
+                    // Slider tilt: steeper around the predicted acc (unchanged there), up to SliderTiltRange away from it
+                    double distance = Math.Clamp(x - predictedAcc, -CurveSettings.Current.SliderTiltRange, CurveSettings.Current.SliderTiltRange);
+                    value *= Math.Exp(tilt * distance * 100);
+                }
+                return new Point(x, value);
+            }).ToList();
+        }
+
+        // Sliders and curved sliders per swing of a rated map
+        public static double SliderPercentage(global::beatleader_analyzer.BeatmapScanner.Data.Ratings ratings) =>
+            ratings.SwingData.Count > 0 ? (ratings.Statistics.Sliders + ratings.Statistics.CurvedSliders) / (double)ratings.SwingData.Count : 0;
+
+        // Slider tilt per 1% acc of a map's curve (0: none)
+        private static double SliderTilt(LackMapCalculation lackRatings, double predictedAcc)
+        {
+            var settings = CurveSettings.Current;
+            if (!settings.Enabled || settings.SliderTilt == 0 || predictedAcc <= 0.6 || predictedAcc >= 0.9995) return 0;
+            return settings.SliderTilt * lackRatings.SliderPercentage;
         }
 
         // Value of the per-map curve (GetCurve above) at acc, computed directly instead of from the sampled points.
@@ -285,6 +308,14 @@
 
         // C never goes above 1 (the curve would go down)
         public double MaxC { get; set; } = 1;
+
+        // Slider tilt: maps with many sliders (and curved sliders) were worth more than others of their stars (Megametric75
+        // +0.17 for the 10% with the most, +0.48 for the top 3%; You Are Mine Normal, 49% sliders, +2.6), while their top
+        // scores sit as close to the predicted acc as on other maps (~0.5% under). Their curve is multiplied by
+        // e^(SliderTilt x slider share x (acc - predicted acc) in %), up to SliderTiltRange from the predicted acc: higher
+        // above it, lower under it, unchanged at it (the acc rating and the stars don't use it). 0 = off.
+        public double SliderTilt { get; set; } = 0.2;
+        public double SliderTiltRange { get; set; } = 0.015;
 
         public CurveRow ParamsAt(double predictedAcc)
         {
