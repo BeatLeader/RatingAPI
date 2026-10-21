@@ -39,16 +39,25 @@ namespace RatingAPI.Pp
         // most on easy maps (they score far above 96% there): the top 100's median pp at 1-2, 2-3, 3-4, 4-5 stars went 398,
         // 404, 443, 478 -> 325, 362, 412, 456; with it 362, 385, 424, 460. More (1.1: 400, 410, 437, 463) makes pp at the
         // predicted acc fall from 1 to 4 stars again (615, 546, 514, 502) and the worth spread 0.455 -> 0.465.
+        // Start 2 -> 7, end 5 -> 10 (with the low star bonus to 9 stars below): top players' best scores at 3-8 stars had
+        // fallen 3-6% under prod's against the 10-12 star plateau (median of each top 1000 player's top 50: 3* 1.000, 5*
+        // 1.044, 7* 0.990 vs prod 1.044, 1.089, 1.021), most on acc players' 99% scores on 4-6 star maps (ACC | Pandita
+        // #10 in prod, #45). Both together: 1.056, 1.068, 1.022, Pandita #6, top 1000 rank correlation 0.993, worth
+        // slopes unchanged. AccCurvePower doesn't move stars (read at 96%).
         public double LowStarCurvePower { get; set; } = 1.0;
-        public double LowStarCurveStart { get; set; } = 2;
-        public double LowStarCurveEnd { get; set; } = 5;
+        public double LowStarCurveStart { get; set; } = 7;
+        public double LowStarCurveEnd { get; set; } = 10;
         // 0.2193 -> 0.1874 (BalanceTuner) after DENSITY_CAP 1: dense low-tech maps lost pass, so tech-heavy maps were worth
         // more than others of their stars. -> 0.1695 after the acc rating's movement correction (AccRating.EffectiveAcc),
         // which raised the acc of high-movement maps (tech share slope 0.047 -> 0.007). -> 0.1485 after the 4-32 s pass
         // windows. -> 0.1348 with the prod rescale: tech ratings x1.102 (AnalyzeMap.BALANCED_TECH_SCALER), same tech pp.
         // -> 0.0938 with TechRatingPower (0.1348 / 1.3374^TechRatingPower, see AccRatingPower): the same tech pp.
         // -> 0.0891 (x0.95) with AccCurvePower 0.9 and PassTopKnee 10.4 (tech share slope +0.027 -> +0.003).
-        public double TechWeight { get; set; } = 0.0891;
+        // -> 0.124 (x1.39) from the balance tuner's PlayerAdjusted worth (BalanceTuner.WorthMeasures): for the same players
+        // at their level, tech-heavy maps paid less than others of their stars (tech share slope -0.033, tech 8+ maps -2.7%;
+        // InRange agreed, -0.042). Tech pp is 2-5% of a score, so tech-heavy maps gain 1-2%: tech share slope -0.007, top
+        // 1000 rank correlation 0.991. Megametric75 called it +0.126, its overreaction to rating changes.
+        public double TechWeight { get; set; } = 0.124;
         public double TechRatingPower { get; set; } = 1.2477;
         public double TechAccExponent { get; set; } = 3.5;
         // Stars and players' pp on prod's scale. StarScale / StarExponent: pp at 96% is steeper at the top than prod's stars;
@@ -63,7 +72,10 @@ namespace RatingAPI.Pp
         public double StarDivisor { get; set; } = 83.6925;
         public double StarScale { get; set; } = 1.2131;
         public double StarExponent { get; set; } = 1.17507;
-        public double PpMultiplier { get; set; } = 1.0833;
+        // -> 1.0625 with TechWeight 0.124 (every map has some tech pp, so the top 1000's average rose 16403 -> 16724; x0.9808
+        // keeps it). -> 1.0597 with the low star curve power and bonus to 9-10 stars: the top 1000's average back to prod's
+        // (16395; 16438 at 1.0625).
+        public double PpMultiplier { get; set; } = 1.0597;
 
         // Low star bonus: maps under LowStarBonusEnd stars pay more, without changing their stars (+45% at 1 star, +17% at 2,
         // +6% at 3, nothing from 4). Top players farm the easiest maps to 99%+, but stars are measured at 96%, so the
@@ -78,8 +90,10 @@ namespace RatingAPI.Pp
         // Stars now include the bonus (stars = what a 96% score is worth, StarsFromPp), so it raises the stars of the maps it
         // applies to, and its input is those stars. Halved (0.0642 -> 0.0321) after the inflation was removed, which raised
         // pp most under 3 stars (x1.44): with it, pp at the predicted acc no longer falls from 1 to 4 stars.
-        public double LowStarBonus { get; set; } = 0.0321;
-        public double LowStarBonusEnd { get; set; } = 4.49;
+        // -> 0.006 up to 9 stars (was 0.0321 up to 4.49): +10% at 1 star, +8.5% at 2, +6.9% at 3, +5.3% at 4, +3.8% at 5,
+        // +1.5% at 7, nothing from 9 (was +17.6%, +11%, +5.4%, +1%, 0), with LowStarCurveStart / End above.
+        public double LowStarBonus { get; set; } = 0.006;
+        public double LowStarBonusEnd { get; set; } = 9;
         public double LowStarBonusPower { get; set; } = 1.36;
 
         public static PpFormula Current { get; set; } = new();
