@@ -52,7 +52,8 @@
         // - K, W shape the middle part (60-95%), K2, P2 the upper part (95% to A);
         // - above A, the high-pass extension L(x) leaves A with the curve's slope there, which then keeps growing (C < 0,
         //   still exponential) or fades (0 < C <= 1; 0 = straight line).
-        // The parameters only act relative to the default ModifiableCurve: value = base table(x) * modified(x) / default(x),
+        // The parameters only act relative to the default ModifiableCurve: value = base table(x) * modified(x) / default(x)
+        // (the table interpolated smoothly, SmoothBaseValue),
         // so default parameters give exactly today's curve (the default ModifiableCurve is 3-6% above the table at 97-99.9%,
         // using it directly would raise most acc pp). Never above the base curve. Only map data is used, never scores.
         public List<Point> GetCurve(LackMapCalculation lackRatings, double predictedAcc)
@@ -125,9 +126,12 @@
             return (new ModifiableCurve { A = a, C = row.C, K = row.K, W = row.W, K2 = row.K2, P2 = row.P2 }, new ModifiableCurve());
         }
 
+        // The base it scales is SmoothBaseValue: with the linear table the slope jumped up at every table point and fell inside
+        // each segment (the ratio falls with acc), so per-map curves were bumpy above ~98.5% (99.3-99.55% at 97% predicted:
+        // 0.10, 0.07, 0.12 per 0.05%). Same values at the table points (96% included), up to 1.34% lower between them.
         private static double PerMapValue((ModifiableCurve modified, ModifiableCurve standard) curves, double x)
         {
-            double baseValue = BaseValue(x);
+            double baseValue = SmoothBaseValue(x);
             double reference = curves.standard.GetValue(x);
             double value = reference > 0 ? baseValue * curves.modified.GetValue(x) / reference : baseValue;
             return Math.Min(baseValue, value);
@@ -145,6 +149,45 @@
             double middle_dis = (acc - BaseTable[i - 1].x) / (BaseTable[i].x - BaseTable[i - 1].x);
             return BaseTable[i - 1].y + middle_dis * (BaseTable[i].y - BaseTable[i - 1].y);
         }
+
+        // The base table with monotone cubic interpolation (Fritsch-Carlson) instead of linear: through every table point,
+        // with a continuous slope. Per-map curves only (PerMapValue); the base curve stays linear.
+        public static double SmoothBaseValue(double acc)
+        {
+            var (xs, ys, slopes) = Smooth.Value;
+            if (acc <= xs[0]) return ys[0];
+            if (acc >= xs[^1]) return ys[^1];
+            int i = 0;
+            while (xs[i + 1] < acc) i++;
+            double h = xs[i + 1] - xs[i];
+            double t = (acc - xs[i]) / h;
+            double t2 = t * t, t3 = t2 * t;
+            return (2 * t3 - 3 * t2 + 1) * ys[i] + (t3 - 2 * t2 + t) * h * slopes[i]
+                + (-2 * t3 + 3 * t2) * ys[i + 1] + (t3 - t2) * h * slopes[i + 1];
+        }
+
+        // Table points ascending and the slope at each (weighted harmonic mean of the neighbouring segments' slopes)
+        private static readonly Lazy<(double[] xs, double[] ys, double[] slopes)> Smooth = new(() =>
+        {
+            var points = BaseTable.OrderBy(p => p.x).ToArray();
+            int n = points.Length;
+            double[] xs = points.Select(p => p.x).ToArray(), ys = points.Select(p => p.y).ToArray();
+            double[] h = new double[n - 1], d = new double[n - 1], slopes = new double[n];
+            for (int i = 0; i < n - 1; i++)
+            {
+                h[i] = xs[i + 1] - xs[i];
+                d[i] = (ys[i + 1] - ys[i]) / h[i];
+            }
+            slopes[0] = d[0];
+            slopes[n - 1] = d[n - 2];
+            for (int i = 1; i < n - 1; i++)
+            {
+                if (d[i - 1] * d[i] <= 0) continue;
+                double w1 = 2 * h[i] + h[i - 1], w2 = h[i] + 2 * h[i - 1];
+                slopes[i] = (w1 + w2) / (w1 / d[i - 1] + w2 / d[i]);
+            }
+            return (xs, ys, slopes);
+        });
 
         // From the AccCurvePerMap branch. Default curve parameters from Desmos https://www.desmos.com/calculator/hlhqzmtzon
         // Only GetF2 (to join the base curve at A) and the extension above A (GetL) are used here.
