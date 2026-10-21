@@ -48,13 +48,26 @@
         public const double HIGH_PASS_KNEE = 14.52;
         public const double HIGH_PASS_SLOPE = 0.00214;
 
+        // Very high pass buff, on top of the high pass correction: HIGH_PASS_BUFF less effective acc from HIGH_PASS_BUFF_FULL
+        // pass, ramped in linearly from HIGH_PASS_BUFF_START (no step at the threshold; flat above, so the 17 pass maps don't
+        // gain more than the 14.5 ones). Worth (Megametric75) said the pass 14+ maps were average for their stars, but split
+        // by player rank it was -20% for the top 100 and +31% for #2001-10000, whose few high plays put these maps high in
+        // their weighted list. Without the weight, each score's pp / the player's top pp was 4.1% under maps of the same
+        // stars on the pass 14+ maps in every rank range (pass 12-14 maps +0.3% to +1.2%); their best scores sit 0.25-0.5%
+        // under the predicted acc where other maps' are 0.1-0.4% over. 0.55% raises their scores' pp by about 4.1% (the
+        // 22 maps above 14 pass; Dev database, no acc reweight). Set HIGH_PASS_BUFF to 0 to turn it off.
+        public const double HIGH_PASS_BUFF_START = 13.5;
+        public const double HIGH_PASS_BUFF_FULL = 14.5;
+        public const double HIGH_PASS_BUFF = 0.0055;
+
         // The predicted acc the acc rating uses (see the corrections above). passRating: the pass rating; hitDistance:
         // Ratings.HitDistance. 0 leaves that correction out.
         public static double EffectiveAcc(double predictedAcc, double passRating = 0, double hitDistance = 0) =>
             predictedAcc - HARD_MAP_SLOPE * Math.Max(0, HARD_MAP_KNEE - Math.Max(predictedAcc, HARD_MAP_FLOOR))
             - HIT_DISTANCE_SLOPE * Math.Max(0, Math.Min(hitDistance, HIT_DISTANCE_CAP) - HIT_DISTANCE_KNEE)
                 * Math.Clamp((HIT_DISTANCE_NONE_ABOVE - predictedAcc) / (HIT_DISTANCE_NONE_ABOVE - HIT_DISTANCE_FULL_BELOW), 0, 1)
-            - HIGH_PASS_SLOPE * Math.Max(0, passRating - HIGH_PASS_KNEE);
+            - HIGH_PASS_SLOPE * Math.Max(0, passRating - HIGH_PASS_KNEE)
+            - HIGH_PASS_BUFF * Math.Clamp((passRating - HIGH_PASS_BUFF_START) / (HIGH_PASS_BUFF_FULL - HIGH_PASS_BUFF_START), 0, 1);
 
         public double GetRating(double? predictedAcc, double? passRating, double? techRating, double hitDistance = 0)
         {
