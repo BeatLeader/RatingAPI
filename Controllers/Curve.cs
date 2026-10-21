@@ -2,7 +2,7 @@
 {
     public class Curve
     {
-        // The base acc curve (same values as portaBLe's ReplayUtils pointList2): acc pp = curve(acc) * acc rating * 34
+        // The base acc curve (Pp.PpCalculator.CurveValue): acc pp = curve(acc) * AccWeight * acc rating^AccRatingPower
         public List<(double x, double y)> baseCurve = BaseTable.ToList();
 
         public static readonly (double x, double y)[] BaseTable =
@@ -41,7 +41,7 @@
                 (0.0, 0.000)
         };
 
-        // Base curve for every map (stars, and maps without a usable predicted acc)
+        // Base curve for every map (maps without a usable predicted acc)
         public List<Point> GetCurve(LackMapCalculation lackRatings)
         {
             return BaseTable.Select(p => new Point(p.x, p.y)).ToList();
@@ -274,7 +274,7 @@
         // +0.17 for the 10% with the most, +0.48 for the top 3%; You Are Mine Normal, 49% sliders, +2.6), while their top
         // scores sit as close to the predicted acc as on other maps (~0.5% under). Their curve is multiplied by
         // e^(SliderTilt x slider share x (acc - predicted acc) in %), up to SliderTiltRange from the predicted acc: higher
-        // above it, lower under it, unchanged at it (the acc rating and the stars don't use it). 0 = off.
+        // above it, lower under it, unchanged at it (the acc rating doesn't use it; the stars do, as scores at 96%). 0 = off.
         public double SliderTilt { get; set; } = 0.2;
         public double SliderTiltRange { get; set; } = 0.015;
 

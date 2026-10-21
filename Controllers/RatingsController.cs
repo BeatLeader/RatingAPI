@@ -45,6 +45,9 @@ namespace RatingAPI.Controllers
         public LackMapCalculation LackMapCalculation { get; set; } = new();
         [JsonPropertyName("pointlist")]
         public List<Point> PointList { get; set; } = new();
+        // What a 96% score is worth, from these ratings and PointList (Pp.PpCalculator.ToStars)
+        [JsonPropertyName("stars")]
+        public double Stars { get; set; } = 0;
         [JsonPropertyName("song_length")]
         public float Length { get; set; } = 0;
         // Base NJS of the difficulty from Info.dat (the speed modifier isn't applied)
@@ -453,7 +456,7 @@ namespace RatingAPI.Controllers
             AccRating ar = new();
             var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating, ratings.HitDistance);
             Curve curve = new();
-            // Per-map curve (base curve up to the predicted acc + CurveSettings.AOffset, tapered above); stars use the base curve
+            // Per-map curve (CurveSettings.Table by predicted acc, slider tilt); scores and stars use it
             var pointList = curve.GetCurve(lack, predictedAcc);
             RatingResult result = new()
             {
@@ -461,6 +464,7 @@ namespace RatingAPI.Controllers
                 AccRating = accRating,
                 LackMapCalculation = lack,
                 PointList = pointList,
+                Stars = Pp.PpCalculator.ToStars((float)accRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(pointList)),
                 Length = length,
                 Njs = map.BeatMap?._noteJumpMovementSpeed ?? 0
             };
