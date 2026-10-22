@@ -44,7 +44,8 @@
         // Base curve for every map (maps without a usable predicted acc)
         public List<Point> GetCurve(LackMapCalculation lackRatings)
         {
-            return BaseTable.Select(p => new Point(p.x, p.y)).ToList();
+            double nerf = CurveSettings.Current.LowNoteMultiplier(lackRatings.NoteCount);
+            return BaseTable.Select(p => new Point(p.x, p.y * nerf)).ToList();
         }
 
         // Per-map acc curve: ModifiableCurve (from the AccCurvePerMap branch) with all its parameters (A, C, K, W, K2, P2)
@@ -65,6 +66,7 @@
                 return GetCurve(lackRatings);
             }
             double a = curves?.modified.A ?? 1.0;
+            double nerf = CurveSettings.Current.LowNoteMultiplier(lackRatings.NoteCount);
 
             // Base table points, 0.5% steps from 60% to 95%, 0.05% steps from 95% to 100%, and A
             var xs = BaseTable.Select(p => p.x)
@@ -85,7 +87,7 @@
                     double distance = Math.Clamp(x - predictedAcc, -CurveSettings.Current.SliderTiltRange, CurveSettings.Current.SliderTiltRange);
                     value *= Math.Exp(tilt * distance * 100);
                 }
-                return new Point(x, value);
+                return new Point(x, value * nerf);
             }).ToList();
         }
 
@@ -320,6 +322,25 @@
         // above it, lower under it, unchanged at it (the acc rating doesn't use it; the stars do, as scores at 96%). 0 = off.
         public double SliderTilt { get; set; } = 0.2;
         public double SliderTiltRange { get; set; } = 0.015;
+
+        // Low note nerf: maps with few notes are worth too much for how easily they're grinded to 100%. Their whole curve
+        // (every acc, so acc pp and stars) is multiplied by 1 - (1 - LowNoteRefMultiplier) x ln(LowNoteStart / notes) /
+        // ln(LowNoteStart / LowNoteRefNotes) under LowNoteStart color notes: 1 at 115 notes, falling on a log curve to
+        // LowNoteRefMultiplier at LowNoteRefNotes (Quiet Water Easy, 20 notes: a 100% SF about 785 -> 633 pp on Dev with
+        // the acc reweighter; x0.75 gave 589), and on past it (10 notes x0.72, 5 x0.64), never under LowNoteMinMultiplier.
+        // Pass and tech pp aren't nerfed (next to nothing on such maps). The note count is LackMapCalculation.NoteCount
+        // (0 = unknown, no nerf). LowNoteStart 0 = off.
+        public double LowNoteStart { get; set; } = 115;
+        public double LowNoteRefNotes { get; set; } = 20;
+        public double LowNoteRefMultiplier { get; set; } = 0.8;
+        public double LowNoteMinMultiplier { get; set; } = 0.5;
+
+        public double LowNoteMultiplier(int notes)
+        {
+            if (LowNoteStart <= 0 || notes <= 0 || notes >= LowNoteStart) return 1;
+            double nerf = (1 - LowNoteRefMultiplier) * Math.Log(LowNoteStart / notes) / Math.Log(LowNoteStart / LowNoteRefNotes);
+            return Math.Max(1 - nerf, LowNoteMinMultiplier);
+        }
 
         public CurveRow ParamsAt(double predictedAcc)
         {

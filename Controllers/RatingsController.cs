@@ -31,6 +31,9 @@ namespace RatingAPI.Controllers
         public double SliderPercentage { get; set; } = 0;
         // Analyzer Ratings.HitDistance (used by the acc rating)
         public double HitDistance { get; set; } = 0;
+        // Color notes (the per-map curve's low note nerf, CurveSettings.LowNoteMultiplier; 0 = unknown)
+        [JsonPropertyName("note_count")]
+        public int NoteCount { get; set; } = 0;
         [JsonPropertyName("statistics")]
         public Statistics Statistics { get; set; } = new Statistics();
     }
@@ -443,6 +446,7 @@ namespace RatingAPI.Controllers
                 SliderPercentage = Curve.SliderPercentage(ratings),
                 Statistics = ratings.Statistics,
                 HitDistance = ratings.HitDistance,
+                NoteCount = mapdata.Notes.Count,
             };
 
             var start = map.Data.Notes.OrderBy(x => x.Seconds).FirstOrDefault()?.Seconds ?? 9999;
