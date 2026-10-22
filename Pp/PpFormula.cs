@@ -57,7 +57,10 @@ namespace RatingAPI.Pp
         // at their level, tech-heavy maps paid less than others of their stars (tech share slope -0.033, tech 8+ maps -2.7%;
         // InRange agreed, -0.042). Tech pp is 2-5% of a score, so tech-heavy maps gain 1-2%: tech share slope -0.007, top
         // 1000 rank correlation 0.991. Megametric75 called it +0.126, its overreaction to rating changes.
-        public double TechWeight { get; set; } = 0.124;
+        // -> 0.1612 (x1.3) from the balance tuner with the worth measure without its lower bound (BalanceTuner.
+        // PlayerAdjustedBelow) and with the distance term, without the acc reweighter: tech share slope -0.0148 -> -0.0011,
+        // most tech-heavy 20% -1.0% -> -0.3%, the top 1000's pp from tech 7.0% -> 9.6% (at the edge of the range tried).
+        public double TechWeight { get; set; } = 0.1612;
         public double TechRatingPower { get; set; } = 1.2477;
         public double TechAccExponent { get; set; } = 3.5;
         // Stars and players' pp on prod's scale. StarScale / StarExponent: pp at 96% is steeper at the top than prod's stars;
@@ -74,8 +77,8 @@ namespace RatingAPI.Pp
         public double StarExponent { get; set; } = 1.17507;
         // -> 1.0625 with TechWeight 0.124 (every map has some tech pp, so the top 1000's average rose 16403 -> 16724; x0.9808
         // keeps it). -> 1.0597 with the low star curve power and bonus to 9-10 stars: the top 1000's average back to prod's
-        // (16395; 16438 at 1.0625).
-        public double PpMultiplier { get; set; } = 1.0597;
+        // (16395; 16438 at 1.0625). -> 1.0369 (x0.9785) with TechWeight 0.1612: the top 1000's average rose 16400 -> 16756.
+        public double PpMultiplier { get; set; } = 1.0369;
 
         // Low star bonus: maps under LowStarBonusEnd stars pay more, without changing their stars (+45% at 1 star, +17% at 2,
         // +6% at 3, nothing from 4). Top players farm the easiest maps to 99%+, but stars are measured at 96%, so the

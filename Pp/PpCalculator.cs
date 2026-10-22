@@ -7,6 +7,10 @@ namespace RatingAPI.Pp
     // down; null or fewer than 2 points: the base curve)
     public readonly record struct MapRatings(float AccRating, float PassRating, float TechRating, IReadOnlyList<Vector2>? Curve = null);
 
+    // A map's ratings with what all of its scores' pp share: their stars and their curve's value at StarAccuracy
+    // (PpCalculator.Prepare), so scoring many scores of one map computes them once
+    public readonly record struct PreparedRatings(MapRatings Ratings, float Stars, float StarCurveValue);
+
     // pp of scores and stars of maps, with PpFormula.Current. Everything the pp and the stars need is here (portaBLe's
     // ReplayUtils only calls it).
     public static class PpCalculator
@@ -23,12 +27,13 @@ namespace RatingAPI.Pp
                 return CurveValue(acc);
             }
 
-            int i = 0;
-            for (; i < curve.Count; i++)
+            // The first point at or below acc (the points go down from 100%): binary search, as the scan it replaced
+            int i = 0, hi = curve.Count;
+            while (i < hi)
             {
-                if (curve[i].X <= acc) {
-                    break;
-                }
+                int mid = (i + hi) >> 1;
+                if (curve[mid].X <= acc) hi = mid;
+                else i = mid + 1;
             }
 
             if (i == 0) {
@@ -54,11 +59,25 @@ namespace RatingAPI.Pp
         public static (float pass, float acc, float tech) GetPp(float accuracy, float accRating, float passRating, float techRating, IReadOnlyList<Vector2>? curve = null, float? stars = null)
         {
             var formula = PpFormula.Current;
-            float curveValue = CurveValue(accuracy, curve);
             double power = stars is float s ? formula.CurvePowerAt(s) : formula.AccCurvePower;
-            if (power != 1) curveValue = formula.AccCurve(curveValue, CurveValue(StarAccuracy, curve), power);
+            return GetPp(accuracy, accRating, passRating, techRating, curve, power, power != 1 ? CurveValue(StarAccuracy, curve) : 0);
+        }
+
+        // GetPp with the acc curve power and the curve's value at StarAccuracy given
+        private static (float pass, float acc, float tech) GetPp(float accuracy, float accRating, float passRating, float techRating, IReadOnlyList<Vector2>? curve, double power, float starCurveValue)
+        {
+            var formula = PpFormula.Current;
+            float curveValue = CurveValue(accuracy, curve);
+            if (power != 1) curveValue = formula.AccCurve(curveValue, starCurveValue, power);
             return (formula.PassPp(passRating), formula.AccPp(curveValue, accRating), formula.TechPp(accuracy, techRating));
         }
+
+        // A map's ratings prepared for ScorePp (their stars and their curve's value at StarAccuracy)
+        public static PreparedRatings Prepare(MapRatings ratings) =>
+            new(ratings, ToStars(ratings), CurveValue(StarAccuracy, ratings.Curve));
+
+        // The ranked modifier multipliers (ModifiersMap.RankedMap, read only)
+        private static readonly ModifiersMap RankedModifiers = ModifiersMap.RankedMap();
 
         // pp from the sum of pass, acc and tech pp (PpMultiplier), before the low star bonus
         public static float Scale(float pp) => PpFormula.Current.Scale(pp);
@@ -83,24 +102,37 @@ namespace RatingAPI.Pp
             string modifiers,
             MapRatings ratings,
             MapRatings? speedRatings = null,
-            bool speedModifiersRated = false)
+            bool speedModifiersRated = false) =>
+            ScorePp(accuracy, modifiers, Prepare(ratings), speedRatings is MapRatings speed ? Prepare(speed) : null, speedModifiersRated);
+
+        // ScorePp with the ratings prepared (Prepare): the same pp, for scoring many scores of one map
+        public static (float, float, float, float, float) ScorePp(
+            float accuracy,
+            string modifiers,
+            PreparedRatings ratings,
+            PreparedRatings? speedRatings,
+            bool speedModifiersRated)
         {
             if (accuracy <= 0 || accuracy > 1) return (0, 0, 0, 0, 0);
 
-            float mp = ModifiersMap.RankedMap().GetTotalMultiplier(modifiers, !speedModifiersRated);
+            // No modifiers: 1 (none of them matches)
+            float mp = modifiers.Length == 0 ? 1 : RankedModifiers.GetTotalMultiplier(modifiers, !speedModifiersRated);
 
             float rawPP = 0; float fullPP = 0; float passPP = 0; float accPP = 0; float techPP = 0; float increase = 0;
             if (!modifiers.Contains("NF"))
             {
+                var formula = PpFormula.Current;
                 // The low star bonus (PpFormula.LowStarMultiplier) and the acc curve power use the stars of the ratings each pp uses
-                float stars = ToStars(ratings);
-                (passPP, accPP, techPP) = GetPp(accuracy, ratings.AccRating, ratings.PassRating, ratings.TechRating, ratings.Curve, stars);
-                rawPP = Scale(passPP + accPP + techPP) * PpFormula.Current.LowStarMultiplier(stars);
+                var map = ratings.Ratings;
+                float stars = ratings.Stars;
+                (passPP, accPP, techPP) = GetPp(accuracy, map.AccRating, map.PassRating, map.TechRating, map.Curve, formula.CurvePowerAt(stars), ratings.StarCurveValue);
+                rawPP = Scale(passPP + accPP + techPP) * formula.LowStarMultiplier(stars);
 
-                var score = speedRatings ?? ratings;
-                float scoreStars = speedRatings == null ? stars : ToStars(score);
-                (passPP, accPP, techPP) = GetPp(accuracy, score.AccRating * mp, score.PassRating * mp, score.TechRating * mp, score.Curve, scoreStars);
-                fullPP = Scale(passPP + accPP + techPP) * PpFormula.Current.LowStarMultiplier(scoreStars);
+                var prepared = speedRatings ?? ratings;
+                var score = prepared.Ratings;
+                float scoreStars = prepared.Stars;
+                (passPP, accPP, techPP) = GetPp(accuracy, score.AccRating * mp, score.PassRating * mp, score.TechRating * mp, score.Curve, formula.CurvePowerAt(scoreStars), prepared.StarCurveValue);
+                fullPP = Scale(passPP + accPP + techPP) * formula.LowStarMultiplier(scoreStars);
                 if (passPP + accPP + techPP > 0) {
                     increase = fullPP / (passPP + accPP + techPP);
                 }
