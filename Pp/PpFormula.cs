@@ -47,6 +47,19 @@ namespace RatingAPI.Pp
         public double LowStarCurvePower { get; set; } = 1.0;
         public double LowStarCurveStart { get; set; } = 7;
         public double LowStarCurveEnd { get; set; } = 10;
+        // The acc curve power on the lowest-star maps (CurvePowerAt), before the ramp above: VeryLowStarCurvePower up to
+        // VeryLowStarCurveStart stars, then linearly to LowStarCurvePower at VeryLowStarCurveEnd. Equal to LowStarCurvePower
+        // = off. 1.08: the best plays under 4 stars topped out at 690-710 pp (#1 scores, best of the band) against 775-818
+        // from 5 to 14 stars. Simulated on the ranked scores (with the acc reweighter): best #1 at 1, 2, 3, 4 stars 694, 711,
+        // 706, 766 -> 795, 808, 743, 783; top 10 of each map +11.6%, +8.2%, +4.7%, +1.2%; all scores' mean +3.8%, +1.7%,
+        // 0.0%, -0.3%, median +1.3%, 0.0%, -0.7%, -0.4%; nothing from 5 stars. Scores under 96% lose a little (90%: about
+        // -3% acc pp). The per-map curve rows (CurveSettings.Table, A / C) can't do this: they can only lower the curve, so
+        // they raise maps by cutting it at the predicted acc, which lifted the median score far more than the top ones
+        // (2-3 stars: median 172 -> 531 pp, #1 +12%). C -3 on the 99.5% row only moved one 2 star play (711 -> 746).
+        // Doesn't move stars (read at 96%).
+        public double VeryLowStarCurvePower { get; set; } = 1.08;
+        public double VeryLowStarCurveStart { get; set; } = 3;
+        public double VeryLowStarCurveEnd { get; set; } = 5;
         // 0.2193 -> 0.1874 (BalanceTuner) after DENSITY_CAP 1: dense low-tech maps lost pass, so tech-heavy maps were worth
         // more than others of their stars. -> 0.1695 after the acc rating's movement correction (AccRating.EffectiveAcc),
         // which raised the acc of high-movement maps (tech share slope 0.047 -> 0.007). -> 0.1485 after the 4-32 s pass
@@ -119,9 +132,14 @@ namespace RatingAPI.Pp
             return passPP;
         }
 
-        // The acc curve power of a map with these stars (AccCurvePower, LowStarCurvePower)
+        // The acc curve power of a map with these stars (AccCurvePower, LowStarCurvePower, VeryLowStarCurvePower)
         public double CurvePowerAt(float stars)
         {
+            if (VeryLowStarCurvePower != LowStarCurvePower && stars < VeryLowStarCurveEnd)
+            {
+                if (stars <= VeryLowStarCurveStart) return VeryLowStarCurvePower;
+                return VeryLowStarCurvePower + (LowStarCurvePower - VeryLowStarCurvePower) * (stars - VeryLowStarCurveStart) / (VeryLowStarCurveEnd - VeryLowStarCurveStart);
+            }
             if (LowStarCurvePower == AccCurvePower || !(stars < LowStarCurveEnd)) return AccCurvePower;
             if (stars <= LowStarCurveStart) return LowStarCurvePower;
             return LowStarCurvePower + (AccCurvePower - LowStarCurvePower) * (stars - LowStarCurveStart) / (LowStarCurveEnd - LowStarCurveStart);

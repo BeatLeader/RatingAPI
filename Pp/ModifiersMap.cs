@@ -17,7 +17,7 @@ namespace RatingAPI.Pp
         public float NF { get; set; } = -0.5f;
         public float NO { get; set; } = -0.2f;
         public float PM { get; set; } = 0.0f;
-        public float SC { get; set; } = 0.0f;
+        public float SC { get; set; } = -0.5f;
         public float SA { get; set; } = 0.0f;
         public float OP { get; set; } = -0.5f;
 
@@ -33,7 +33,7 @@ namespace RatingAPI.Pp
                 NF = -1.0f,
                 NO = -0.2f,
                 PM = 0.0f,
-                SC = 0.0f,
+                SC = -0.5f,
                 SA = 0.0f,
                 OP = -0.5f,
             };
