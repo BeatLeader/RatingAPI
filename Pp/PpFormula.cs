@@ -121,6 +121,16 @@ namespace RatingAPI.Pp
         public double PassTopKnee { get; set; } = 10.4;
         public double PassTopSlope { get; set; } = 0.5;
 
+        // Tech pp top compression: above TechTopKnee tech, each point counts TechTopSlope. 1 = off. Tech share was worth
+        // nothing at 0-12 stars (worth per sd of tech share -0.005 to +0.002) but +0.011 at 12-13.5 and +0.017 above, so the
+        // global tech share slope (-0.0017) didn't show it: the 14 tech 13+ maps were +0.051 (Sanity Krush ExpertPlus, tech
+        // 16.8, +0.176), the tech 11-13 maps -0.009. Dev, 22 Oct, no acc reweight: tech 13+ -> +0.023, Sanity Krush +0.106
+        // (14.40 -> 13.50 stars), tech 11-13 unchanged, tech share slope -0.0017 -> -0.0028, the other slopes and gaps within
+        // 0.0003, top 1000 16409 -> 16385. Knee 11 or 10 took the tech 11-13 maps to -0.014 / -0.019; slope 0.25 / 0.2 gained
+        // little more (+0.020 / +0.018) for tech 18 counting as 13.5 / 13.2.
+        public double TechTopKnee { get; set; } = 12;
+        public double TechTopSlope { get; set; } = 0.33;
+
         public PpFormula Clone() => (PpFormula)MemberwiseClone();
 
         public float PassPp(float passRating)
@@ -155,8 +165,13 @@ namespace RatingAPI.Pp
         public float AccPp(float curveValue, float accRating) =>
             accRating > 0 ? curveValue * (float)AccWeight * MathF.Pow(accRating, (float)AccRatingPower) : 0;
 
-        public float TechPp(float accuracy, float techRating) =>
-            techRating > 0 ? MathF.Exp((float)TechAccExponent * accuracy) * (float)TechWeight * MathF.Pow(techRating, (float)TechRatingPower) : 0;
+        public float TechPp(float accuracy, float techRating)
+        {
+            if (!(techRating > 0)) return 0;
+            float tech = techRating;
+            if (tech > TechTopKnee) tech = (float)(TechTopKnee + (tech - TechTopKnee) * TechTopSlope);
+            return MathF.Exp((float)TechAccExponent * accuracy) * (float)TechWeight * MathF.Pow(tech, (float)TechRatingPower);
+        }
 
         // Stars from pp at 96% (pass + acc + tech, before PpMultiplier), without the low star bonus
         public float Stars(float ppAt96)
@@ -192,6 +207,6 @@ namespace RatingAPI.Pp
         public float Scale(float pp) => (float)PpMultiplier * pp;
 
         public override string ToString() => FormattableString.Invariant(
-            $"pass {PassScale}*e^({PassInner}*p^(1/{PassExponent}))-{PassOffset} (x{PassTopSlope} above {PassTopKnee}), acc x{AccWeight}*a^{AccRatingPower}, tech e^({TechAccExponent}a)*{TechWeight}*t^{TechRatingPower}, x{PpMultiplier}, stars {StarScale}*(pp/{StarDivisor})^{StarExponent}, low star bonus {LowStarBonus}*({LowStarBonusEnd}-stars)^{LowStarBonusPower}");
+            $"pass {PassScale}*e^({PassInner}*p^(1/{PassExponent}))-{PassOffset} (x{PassTopSlope} above {PassTopKnee}), acc x{AccWeight}*a^{AccRatingPower}, tech e^({TechAccExponent}a)*{TechWeight}*t^{TechRatingPower} (x{TechTopSlope} above {TechTopKnee}), x{PpMultiplier}, stars {StarScale}*(pp/{StarDivisor})^{StarExponent}, low star bonus {LowStarBonus}*({LowStarBonusEnd}-stars)^{LowStarBonusPower}");
     }
 }
