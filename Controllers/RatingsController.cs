@@ -36,6 +36,10 @@ namespace RatingAPI.Controllers
         // Color notes (the per-map curve's low note nerf, CurveSettings.LowNoteMultiplier; 0 = unknown)
         [JsonPropertyName("note_count")]
         public int NoteCount { get; set; } = 0;
+        // First to last color note in real time (song time / the speed modifier), seconds: the low note nerf's length relief
+        // (CurveSettings.LowNoteSpanFactor; 0 = unknown)
+        [JsonPropertyName("note_span")]
+        public double NoteSpan { get; set; } = 0;
         [JsonPropertyName("statistics")]
         public Statistics Statistics { get; set; } = new Statistics();
     }
@@ -201,6 +205,7 @@ namespace RatingAPI.Controllers
                     }
                     results[name] = GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, timescale, njsMult);
                 }
+                BlendLowNoteSpeeds(results);
             }
             _logger.LogWarning("Took " + sw.ElapsedMilliseconds);
 
@@ -434,6 +439,32 @@ namespace RatingAPI.Controllers
         }
         */
 
+        // The low note speed blend (CurveSettings.LowNoteSpeedBlend) on every speed modifier's pass, tech and acc ratings, and
+        // their stars again. Needs the nomod ratings ("none").
+        public static void BlendLowNoteSpeeds(Dictionary<string, RatingResult> results)
+        {
+            if (!results.TryGetValue("none", out var nomod)) return;
+            int notes = nomod.LackMapCalculation.NoteCount;
+            var settings = CurveSettings.Current;
+            if (notes <= 0 || notes >= settings.LowNoteStart) return;
+            foreach (var (name, result) in results)
+            {
+                if (name == "none") continue;
+                var lack = result.LackMapCalculation;
+                lack.PassRating = settings.LowNoteSpeedBlend(nomod.LackMapCalculation.PassRating, lack.PassRating, notes);
+                lack.TechRating = settings.LowNoteSpeedBlend(nomod.LackMapCalculation.TechRating, lack.TechRating, notes);
+                result.AccRating = settings.LowNoteSpeedBlend(nomod.AccRating, result.AccRating, notes);
+                result.Stars = Pp.PpCalculator.ToStars((float)result.AccRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(result.PointList));
+            }
+        }
+
+        // First to last color note of a difficulty in real time: song seconds / timescale (LackMapCalculation.NoteSpan)
+        public static double NoteSpan(DifficultyV3 mapdata, double timescale = 1)
+        {
+            if (mapdata.Notes.Count < 2 || timescale <= 0) return 0;
+            return (mapdata.Notes.Max(n => n.Seconds) - mapdata.Notes.Min(n => n.Seconds)) / timescale;
+        }
+
         public RatingResult GetBLRatings(DifficultySet map, string characteristic, string difficulty, double bpm, double timescale, double njsMult = 1)
         {
             var mapdata = CustomModeDataMapping(characteristic, map.Data);
@@ -450,6 +481,7 @@ namespace RatingAPI.Controllers
                 HitDistance = ratings.HitDistance,
                 HardSwingRatio = ratings.HardSwingRatio,
                 NoteCount = mapdata.Notes.Count,
+                NoteSpan = NoteSpan(mapdata, timescale),
             };
 
             var start = map.Data.Notes.OrderBy(x => x.Seconds).FirstOrDefault()?.Seconds ?? 9999;
