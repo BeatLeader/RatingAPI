@@ -91,7 +91,11 @@ namespace RatingAPI.Pp
         // -> 1.0625 with TechWeight 0.124 (every map has some tech pp, so the top 1000's average rose 16403 -> 16724; x0.9808
         // keeps it). -> 1.0597 with the low star curve power and bonus to 9-10 stars: the top 1000's average back to prod's
         // (16395; 16438 at 1.0625). -> 1.0369 (x0.9785) with TechWeight 0.1612: the top 1000's average rose 16400 -> 16756.
-        public double PpMultiplier { get; set; } = 1.0369;
+        // -> 1.0332 (x0.9964) with the pass pp top compression's knee 10.4 -> 13 (see PassTopKnee): the top 1000's average
+        // rose 16320 -> 16379 (at 1.0321, the old formula's 16396 at 1.0369).
+        // -> 1.0230 (x0.9901) with RatingAPI's hard swing correction (AccRating.HardSwingMultiplier) and ONE_SABER_NERF 0.44:
+        // the top 1000's average rose 16397 -> 16561.
+        public double PpMultiplier { get; set; } = 1.0230;
 
         // Low star bonus: maps under LowStarBonusEnd stars pay more, without changing their stars (+45% at 1 star, +17% at 2,
         // +6% at 3, nothing from 4). Top players farm the easiest maps to 99%+, but stars are measured at 96%, so the
@@ -114,13 +118,6 @@ namespace RatingAPI.Pp
 
         public static PpFormula Current { get; set; } = new();
 
-        // Pass pp top compression: above PassTopKnee pass, each point counts PassTopSlope. Maps with more pass than others of
-        // their stars were worth more above 10 stars only (Megametric75 +0.18 to +0.31 above their star range from about 11
-        // pass then, 13.4 now; prod alike). 1 = off. 13.375 -> 10.4 after the inflation was removed (the highest pass 5% of
-        // maps +0.092 -> +0.011 with AccCurvePower 0.9).
-        public double PassTopKnee { get; set; } = 10.4;
-        public double PassTopSlope { get; set; } = 0.5;
-
         // Tech pp top compression: above TechTopKnee tech, each point counts TechTopSlope. 1 = off. Tech share was worth
         // nothing at 0-12 stars (worth per sd of tech share -0.005 to +0.002) but +0.011 at 12-13.5 and +0.017 above, so the
         // global tech share slope (-0.0017) didn't show it: the 14 tech 13+ maps were +0.051 (Sanity Krush ExpertPlus, tech
@@ -133,10 +130,27 @@ namespace RatingAPI.Pp
 
         public PpFormula Clone() => (PpFormula)MemberwiseClone();
 
+        // Pass pp top compression: above PassTopKnee pass, each point counts PassTopSlope (1 = off). Knee 13.375 -> 10.4 after
+        // the inflation was removed, from Megametric75 (the highest pass 5% of maps +0.092 -> +0.011 with AccCurvePower 0.9),
+        // which inflated high pass maps' survivors. -> 13 from the PlayerAdjusted worth (BalanceTuner.WorthMeasures) and
+        // the top plays (Dev, 24 Oct, no acc reweight; per map, pass 9-10.4 for reference: 10.2 players' top play, 1.0 of
+        // them 30pp+ over their second best):
+        //   knee 10.4: pass 10.4-13 -0.009, 13-15 -0.031 (7.9 top plays per map, 0.7 by 30pp+), 15+ -0.030 (6.3, 1.2)
+        //   off:       pass 10.4-13 -0.004, 13-15 -0.011 (11.4, 1.3), 15+ +0.002 (13.1, 3.3: The Purple Dimension 15 -> 41
+        //              players' top play, Godspeed E+ 31 -> 58)
+        //   knee 13:   pass 10.4-13 -0.004, 13-15 -0.015 (11.0, 1.1), 15+ -0.016 (8.0, 1.8)
+        // pass share slope +0.0038 -> +0.0047, tech share slope -0.0029 -> -0.0046, worth spread 0.0392 -> 0.0389. Knee 12
+        // cut 15+ little more (1.6 by 30pp+) for 13-15 -0.022; knee 14 / 15 let 15+ back toward off. The 30pp+ top plays on
+        // pass 15+ maps are mostly players ranked about 1000-3000 (median 1438; 10 of the 157 top plays are top 100's), and
+        // the worth of high pass maps is low for most of their players: their pp is uneven between players, so no pass pp
+        // value is right for both. Pass 10.4+ maps with low tech (< 4.5: -0.016) still pay less than the others (+0.003).
+        public double PassTopKnee { get; set; } = 13;
+        public double PassTopSlope { get; set; } = 0.5;
+
         public float PassPp(float passRating)
         {
             float pass = passRating;
-            if (pass > PassTopKnee) pass = (float)(PassTopKnee + (pass - PassTopKnee) * PassTopSlope);
+            if (PassTopSlope != 1 && pass > PassTopKnee) pass = (float)(PassTopKnee + (pass - PassTopKnee) * PassTopSlope);
             float passPP = (float)PassScale * MathF.Exp((float)PassInner * MathF.Pow(pass, 1 / (float)PassExponent)) - (float)PassOffset;
             if (float.IsInfinity(passPP) || float.IsNaN(passPP) || passPP < 0) passPP = 0;
             return passPP;

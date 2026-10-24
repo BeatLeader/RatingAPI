@@ -69,13 +69,37 @@
             - HIGH_PASS_SLOPE * Math.Max(0, passRating - HIGH_PASS_KNEE)
             - HIGH_PASS_BUFF * Math.Clamp((passRating - HIGH_PASS_BUFF_START) / (HIGH_PASS_BUFF_FULL - HIGH_PASS_BUFF_START), 0, 1);
 
-        public double GetRating(double? predictedAcc, double? passRating, double? techRating, double hitDistance = 0)
+        // Hard swing correction: maps whose hardest swings are scattered over the map (Analyzer Ratings.HardSwingRatio above 1)
+        // were worth less than others of their stars at every pass (Dev, 24 Oct, no acc reweight: -4.8% for the maps with
+        // (ratio - 1) x pass above 4, +0.8% under 1), most on pass 11+ maps: the pass rating averages the hardest windows, so
+        // isolated hard swings count little, and the Acc AI predicts the accuracy of cut notes, so the misses and bad cuts on
+        // them don't count either (top 300 players' accuracy against the prediction, after their own level, -0.8% to -1.2%
+        // on the spikiest pass 11+ maps). The acc rating is multiplied by 1 + HARD_SWING_SLOPE x the excess of (ratio - 1)
+        // x pass over HARD_SWING_KNEE, up to HARD_SWING_CAP. A multiplier, not a lower effective acc: the same acc pp change
+        // at every predicted acc (the curve is much steeper on easy maps). Fitted on the worth by (ratio - 1) x pass (in
+        // memory, the maps' own swing data). Re-rated: 3-4 -0.020 -> -0.007, 4+ -0.048 -> -0.017, under 1 +0.008 ->
+        // +0.006; worth spread 0.0389 -> 0.0377, tech share slope -0.0052 -> -0.0032, 355 maps raised 2%+ (up to x1.093).
+        // 3% per point flattened it fully but put about twice the 30pp+ top plays on the raised maps. One hand maps (ratio 0) aren't changed. Most of
+        // the pass 11+ maps far under (Worth -3% to -25%) stay under: their shortfall against the Acc AI is their own,
+        // none of the Analyzer's features predicts it (cross-validated R2 0.15). Set HARD_SWING_SLOPE to 0 to turn it off.
+        public const double HARD_SWING_KNEE = 2.0;
+        public const double HARD_SWING_SLOPE = 0.02;
+        public const double HARD_SWING_CAP = 0.12;
+
+        // The hard swing correction's multiplier of the acc rating. hardSwingRatio: Ratings.HardSwingRatio (0: none)
+        public static double HardSwingMultiplier(double passRating, double hardSwingRatio) =>
+            hardSwingRatio > 0
+                ? 1 + Math.Min(HARD_SWING_SLOPE * Math.Max(0, (hardSwingRatio - 1) * passRating - HARD_SWING_KNEE), HARD_SWING_CAP)
+                : 1;
+
+        public double GetRating(double? predictedAcc, double? passRating, double? techRating, double hitDistance = 0, double hardSwingRatio = 0)
         {
             double difficulty_to_acc;
             if (predictedAcc > 0)
             {
                 double effective = EffectiveAcc(predictedAcc ?? 0, passRating ?? 0, hitDistance);
-                difficulty_to_acc = ACC_SCALE * Math.Pow(Curve(predictedAcc ?? 0, effective + ACC_OFFSET), -ACC_EXPONENT);
+                difficulty_to_acc = ACC_SCALE * Math.Pow(Curve(predictedAcc ?? 0, effective + ACC_OFFSET), -ACC_EXPONENT)
+                    * HardSwingMultiplier(passRating ?? 0, hardSwingRatio);
             }
             else
             {

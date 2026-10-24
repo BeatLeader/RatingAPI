@@ -5,6 +5,13 @@
         // The base acc curve (Pp.PpCalculator.CurveValue): acc pp = curve(acc) * AccWeight * acc rating^AccRatingPower
         public List<(double x, double y)> baseCurve = BaseTable.ToList();
 
+        // Low acc lift (24 Oct): +20% up to 80%, fading to 0 at 92% (0.91: x1.017 ... 0.85: x1.117, 0.825: x1.158; 0.6-0.8
+        // were 0.256, 0.296, 0.345, 0.404, 0.473, then 0.522, 0.581, 0.650, 0.729, 0.768). Maps players score low on were worth
+        // less for them than their other maps: Extratongue / 999 ExpertPlus had 46% / 52% of the top 5000's scores at
+        // 70-85% (11-13 star maps 20%), worth -0.176 / -0.150 (Dev, no acc reweight). Stars (a 96% score) and acc ratings
+        // (the curve at the effective acc, 95%+) don't move. Simulated (simplified PlayerAdjusted fit, Dev): worth spread
+        // 0.048 -> 0.041, maps above +0.08 132 -> 75, below -0.05 497 -> 377, those four +2.2% to +2.5%, Chrome Vox
+        // ExpertPlus +3.1%.
         public static readonly (double x, double y)[] BaseTable =
         {
                 (1.0, 7.424),
@@ -28,16 +35,16 @@
                 (0.94, 0.931),
                 (0.93, 0.867),
                 (0.92, 0.813),
-                (0.91, 0.768),
-                (0.9, 0.729),
-                (0.875, 0.650),
-                (0.85, 0.581),
-                (0.825, 0.522),
-                (0.8, 0.473),
-                (0.75, 0.404),
-                (0.7, 0.345),
-                (0.65, 0.296),
-                (0.6, 0.256),
+                (0.91, 0.781),
+                (0.9, 0.753),
+                (0.875, 0.699),
+                (0.85, 0.649),
+                (0.825, 0.605),
+                (0.8, 0.568),
+                (0.75, 0.485),
+                (0.7, 0.414),
+                (0.65, 0.355),
+                (0.6, 0.307),
                 (0.0, 0.000)
         };
 

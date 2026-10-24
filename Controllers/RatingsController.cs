@@ -31,6 +31,8 @@ namespace RatingAPI.Controllers
         public double SliderPercentage { get; set; } = 0;
         // Analyzer Ratings.HitDistance (used by the acc rating)
         public double HitDistance { get; set; } = 0;
+        // Analyzer Ratings.HardSwingRatio (used by the acc rating)
+        public double HardSwingRatio { get; set; } = 0;
         // Color notes (the per-map curve's low note nerf, CurveSettings.LowNoteMultiplier; 0 = unknown)
         [JsonPropertyName("note_count")]
         public int NoteCount { get; set; } = 0;
@@ -446,6 +448,7 @@ namespace RatingAPI.Controllers
                 SliderPercentage = Curve.SliderPercentage(ratings),
                 Statistics = ratings.Statistics,
                 HitDistance = ratings.HitDistance,
+                HardSwingRatio = ratings.HardSwingRatio,
                 NoteCount = mapdata.Notes.Count,
             };
 
@@ -458,7 +461,7 @@ namespace RatingAPI.Controllers
 
             var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult);
             AccRating ar = new();
-            var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating, ratings.HitDistance);
+            var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating, ratings.HitDistance, ratings.HardSwingRatio);
             Curve curve = new();
             // Per-map curve (CurveSettings.Table by predicted acc, slider tilt); scores and stars use it
             var pointList = curve.GetCurve(lack, predictedAcc);
