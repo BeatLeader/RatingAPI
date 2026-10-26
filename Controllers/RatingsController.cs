@@ -36,8 +36,8 @@ namespace RatingAPI.Controllers
         // Color notes (the per-map curve's low note nerf, CurveSettings.LowNoteMultiplier; 0 = unknown)
         [JsonPropertyName("note_count")]
         public int NoteCount { get; set; } = 0;
-        // First to last color note in real time (song time / the speed modifier), seconds: the low note nerf's length relief
-        // (CurveSettings.LowNoteSpanFactor; 0 = unknown)
+        // First to last color note in real time (song time / the speed modifier), seconds: the length nerf
+        // (CurveSettings.ShortFactor; 0 = unknown)
         [JsonPropertyName("note_span")]
         public double NoteSpan { get; set; } = 0;
         [JsonPropertyName("statistics")]

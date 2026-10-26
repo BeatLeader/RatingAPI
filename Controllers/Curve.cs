@@ -69,12 +69,9 @@
             var curves = PerMapCurves(predictedAcc);
             double tilt = SliderTilt(lackRatings, predictedAcc);
             var settings = CurveSettings.Current;
-            // The low note nerf: its uniform part and its cut of the gain above the predicted acc (0: none)
-            double nerf = settings.LowNoteUniformShare * (1 - settings.LowNoteMultiplier(lackRatings.NoteCount, lackRatings.NoteSpan));
-            double cut = predictedAcc > 0.6 && predictedAcc < 1 ? settings.LowNoteGainCutAt(lackRatings.NoteCount, lackRatings.NoteSpan) : 0;
-            double bonus = settings.LowNoteBonusAt(lackRatings.NoteCount, lackRatings.NoteSpan);
-            bool gainCut = cut != 0 || bonus != 0;
-            if (curves == null && tilt == 0 && !gainCut)
+            // The low note and length nerf (LowNoteMultiplier): the whole curve
+            double nerf = settings.LowNoteMultiplier(lackRatings.NoteCount, lackRatings.NoteSpan);
+            if (curves == null && tilt == 0)
             {
                 return GetCurve(lackRatings);
             }
@@ -85,7 +82,6 @@
                 .Concat(Enumerable.Range(0, 71).Select(i => 0.6 + i * 0.005))
                 .Concat(Enumerable.Range(0, 101).Select(i => 0.95 + i * 0.0005))
                 .Append(a)
-                .Concat(gainCut ? new[] { predictedAcc } : Array.Empty<double>())
                 .Select(x => Math.Round(x, 6))
                 .Where(x => x >= 0 && x <= 1)
                 .Distinct()
@@ -102,8 +98,7 @@
                 }
                 return value;
             }
-            double atPredicted = gainCut ? Raw(predictedAcc) : 0;
-            return xs.Select(x => new Point(x, settings.LowNoteValue(Raw(x), x, atPredicted, predictedAcc, nerf, cut, bonus))).ToList();
+            return xs.Select(x => new Point(x, Raw(x) * nerf)).ToList();
         }
 
         // Sliders and curved sliders per swing of a rated map
@@ -338,95 +333,58 @@
         public double SliderTilt { get; set; } = 0.2;
         public double SliderTiltRange { get; set; } = 0.015;
 
-        // Low note nerf: maps with few notes (under LowNoteStart color notes, LackMapCalculation.NoteCount; 0 = unknown, no
-        // nerf) are worth too much for how easily they're grinded to 100%. The whole curve is multiplied by LowNoteMultiplier
-        // (x0.80 at 20 notes, never under LowNoteMinMultiplier, times the span factor: x0.80 for Quiet Water Easy, 20 notes
-        // over 18 s, x0.74 with SF, x0.82 with SS; x1 for RTX 20000 Easy, 20 notes over 111 s, then its length bonus +5.5%),
-        // so the curve stays smooth: LowNoteUniformShare 1, LowNoteGainCut 0. The gain cut below (0.4) bent the curve at the
-        // predicted acc (its slope x0.6 above it, a kink in the acc curve): LowNoteGainCut of what the curve gained over its
-        // value there was cut (all of it under LowNoteGainFullBelow notes, fading to none at LowNoteStart on ln(notes),
-        // LowNoteShare, times the span factor), so scores under the predicted acc kept their pp (Dev, 24 Oct, 100% nomod / SS
-        // / FS / SF: Quiet Water Easy 625 / 634 / 611 / 592, RTX 20000 Easy 680 / 694 / 664 / 646, the 40-60 note maps
-        // 900-970 nomod, 770-860 SF). LowNoteShare still scales the length bonus (LowNoteBonusAt).
-        // Speed modifiers don't raise these maps' ratings (LowNoteSpeedBlend): faster is a shorter grind, not a harder map.
-        // Pass and tech pp aren't nerfed. LowNoteStart 0 = off.
+        // Low note and length nerf: maps with few notes and short maps are worth too much for how easily they're grinded to
+        // 100%. The whole curve (so it stays smooth) is multiplied by LowNoteMultiplier = LowNoteFactor x ShortFactor, each 1
+        // at most: one of them nerfs a bit, both nerf more, nothing is buffed. Speed modifiers don't raise low note maps'
+        // ratings (LowNoteSpeedBlend), and their shorter real time makes the ShortFactor stronger. Pass and tech pp aren't
+        // nerfed.
+        // Before (24-25 Oct) the notes' nerf was times a span factor (0 at 75 s, up to 1.5 under 18 s) and maps past 75 s
+        // got a length bonus up to +10%: RTX 20000 Easy (20 notes over 111 s) x1.055, a short map with 115+ notes x1, so
+        // neither alone nerfed and length buffed. Notes at most x0.95 (x0.9 at 20 notes put Quiet Water Easy's 100% at
+        // 559pp). Length at most x0.9, at 12 s: capped at x0.95 at 18 s, Quiet Water Easy (18 s) had its nomod, FS and SF
+        // at the cap, so FS and SF paid more than nomod (the speed blend keeps a little of their rating), and a 5% length
+        // nerf couldn't put RTX 20000 Easy (111 s, acc rating 2.97) over it (3.13: 6.6% more at 100% before the nerf). Now
+        // 100% on Quiet Water Easy: SS 609, nomod 604 (x0.876), FS 598, SF 591 (x0.855); RTX 20000 Easy 614 (x0.95, was
+        // x1.055). A 45 s map with 400 notes x0.972 (was x1), with SF x0.95. Dev (26 Oct), from the 5% length cap: stars
+        // of the short maps x0.994, of the short low note ones x0.982; the rest and the top 1000 unchanged.
+        // Notes: 1 - (1 - LowNoteRefMultiplier) x ln(LowNoteStart / notes) / ln(LowNoteStart / LowNoteRefNotes), at least
+        // LowNoteMinMultiplier, under LowNoteStart color notes (LackMapCalculation.NoteCount; 0 = unknown: 1). LowNoteStart
+        // 0 = off.
         public double LowNoteStart { get; set; } = 115;
         public double LowNoteRefNotes { get; set; } = 20;
-        public double LowNoteRefMultiplier { get; set; } = 0.8;
-        public double LowNoteMinMultiplier { get; set; } = 0.5;
-        public double LowNoteUniformShare { get; set; } = 1;
-        public double LowNoteGainCut { get; set; } = 0;
-        public double LowNoteGainFullBelow { get; set; } = 70;
+        public double LowNoteRefMultiplier { get; set; } = 0.95;
+        public double LowNoteMinMultiplier { get; set; } = 0.95;
+        // Length: 1 - (1 - ShortRefMultiplier) x ln(ShortStart / span) / ln(ShortStart / ShortRefSpan), at least
+        // ShortMinMultiplier, under ShortStart seconds (12 s: SF on an 18 s map, so the speeds stay apart above it). The span is the first to the last color note in real time (song time /
+        // the speed modifier's, LackMapCalculation.NoteSpan; 0 = unknown: 1), so FS and SF, shorter grinds, are nerfed more
+        // and SS less. 4% of ranked maps are under 75 s nomod (median 177 s), 6% with FS, 11% with SF. ShortStart 0 = off.
+        public double ShortStart { get; set; } = 75;
+        public double ShortRefSpan { get; set; } = 12;
+        public double ShortRefMultiplier { get; set; } = 0.9;
+        public double ShortMinMultiplier { get; set; } = 0.9;
 
-        // Span factor: a long map with few notes is as easy to play as a short one but takes longer to grind (RTX 20000 Easy,
-        // 20 notes over 111 s, against Quiet Water Easy's 20 over 18 s: its top 10 at 99.4-99.7% paid 456 pp, Quiet Water's at
-        // 99.9% 509). 1 - LowNoteSpanWeight x ln(span / LowNoteSpanStart) / ln(LowNoteSpanRef / LowNoteSpanStart), between
-        // LowNoteSpanMinFactor and LowNoteSpanMaxFactor: all of the nerf at LowNoteSpanStart, none at LowNoteSpanRef, more
-        // under LowNoteSpanStart. The span is the first to the last color note in real time (song time / the speed modifier's,
-        // LackMapCalculation.NoteSpan; 0 = unknown, factor 1), so FS and SF, shorter grinds, get more of the nerf and SS less.
-        public double LowNoteSpanStart { get; set; } = 18;
-        public double LowNoteSpanRef { get; set; } = 75;
-        public double LowNoteSpanWeight { get; set; } = 1;
-        public double LowNoteSpanMinFactor { get; set; } = 0;
-        public double LowNoteSpanMaxFactor { get; set; } = 1.5;
-        // Length bonus: past LowNoteSpanRef (the span factor under 0, unclamped), the whole curve x 1 + LowNoteSpanBonus per
-        // unit of it, up to LowNoteSpanBonusMax, times LowNoteShare (RTX 20000 Easy +5.5%). 0 = off.
-        public double LowNoteSpanBonus { get; set; } = 0.2;
-        public double LowNoteSpanBonusMax { get; set; } = 0.1;
+        // The whole curve's multiplier (notes: color notes; span: the first to the last of them in real time, in seconds;
+        // 0 = unknown)
+        public double LowNoteMultiplier(int notes, double span = 0) => LowNoteFactor(notes) * ShortFactor(span);
 
-        // The gain cut of a map (notes: color notes; span: real time, seconds)
-        public double LowNoteGainCutAt(int notes, double span)
+        public double LowNoteFactor(int notes)
         {
-            if (LowNoteGainCut <= 0) return 0;
-            return LowNoteGainCut * LowNoteShare(notes) * LowNoteSpanFactor(span);
-        }
-
-        // The length bonus of a map
-        public double LowNoteBonusAt(int notes, double span)
-        {
-            if (LowNoteSpanBonus <= 0 || span <= 0 || LowNoteSpanRef <= LowNoteSpanStart) return 0;
-            double raw = 1 - LowNoteSpanWeight * Math.Log(span / LowNoteSpanStart) / Math.Log(LowNoteSpanRef / LowNoteSpanStart);
-            return raw >= 0 ? 0 : Math.Min(LowNoteSpanBonus * -raw, LowNoteSpanBonusMax) * LowNoteShare(notes);
-        }
-
-        // How much of the gain cut and the length bonus a map gets by its notes: all under LowNoteGainFullBelow, none from
-        // LowNoteStart (on ln(notes))
-        public double LowNoteShare(int notes)
-        {
-            if (LowNoteStart <= 0 || notes <= 0 || notes >= LowNoteStart) return 0;
-            return notes <= LowNoteGainFullBelow ? 1 : Math.Log(LowNoteStart / notes) / Math.Log(LowNoteStart / LowNoteGainFullBelow);
-        }
-
-        // The curve's value at x with the low note nerf: value, the value without it; atPredicted, that at the predicted acc;
-        // nerf, the uniform part (LowNoteUniformShare x (1 - LowNoteMultiplier)); cut, the gain cut (LowNoteGainCutAt); bonus,
-        // the length bonus (LowNoteBonusAt)
-        public double LowNoteValue(double value, double x, double atPredicted, double predictedAcc, double nerf, double cut, double bonus = 0)
-        {
-            if (cut != 0 && x > predictedAcc && predictedAcc > 0.6)
-                value = atPredicted + (value - atPredicted) * Math.Max(1 - cut, 0);
-            return value * Math.Max(1 - nerf, 0) * (1 + bonus);
-        }
-
-        // notes: color notes; span: the first to the last of them in real time, in seconds (0 = unknown)
-        public double LowNoteMultiplier(int notes, double span = 0)
-        {
-            if (LowNoteStart <= 0 || notes <= 0 || notes >= LowNoteStart) return 1;
+            if (LowNoteStart <= 0 || notes <= 0 || notes >= LowNoteStart || LowNoteRefNotes >= LowNoteStart) return 1;
             double nerf = (1 - LowNoteRefMultiplier) * Math.Log(LowNoteStart / notes) / Math.Log(LowNoteStart / LowNoteRefNotes);
-            return 1 - (1 - Math.Max(1 - nerf, LowNoteMinMultiplier)) * LowNoteSpanFactor(span);
+            return Math.Clamp(1 - nerf, LowNoteMinMultiplier, 1);
         }
 
-        // The span factor of a map (span: real time, seconds)
-        public double LowNoteSpanFactor(double span)
+        public double ShortFactor(double span)
         {
-            if (LowNoteSpanWeight <= 0 || span <= 0 || LowNoteSpanRef <= LowNoteSpanStart) return 1;
-            return Math.Clamp(1 - LowNoteSpanWeight * Math.Log(span / LowNoteSpanStart) / Math.Log(LowNoteSpanRef / LowNoteSpanStart),
-                LowNoteSpanMinFactor, LowNoteSpanMaxFactor);
+            if (ShortStart <= 0 || span <= 0 || span >= ShortStart || ShortRefSpan >= ShortStart) return 1;
+            double nerf = (1 - ShortRefMultiplier) * Math.Log(ShortStart / span) / Math.Log(ShortStart / ShortRefSpan);
+            return Math.Clamp(1 - nerf, ShortMinMultiplier, 1);
         }
 
         // Low note speed blend: under LowNoteStart color notes, a speed modifier's pass, tech and acc ratings keep (notes /
         // LowNoteStart)^2 of their difference to the nomod ones (RatingsController.BlendLowNoteSpeeds, RatingsRefresh.Refresh):
         // speed makes these maps faster to grind, not harder, so it shouldn't raise their ratings (Quiet Water Easy's SF acc
-        // rating was 7.6% over its nomod one), and the span factor then gives the faster modifiers less. With the square,
+        // rating was 7.6% over its nomod one), and the ShortFactor then gives the faster modifiers less. With the square,
         // 47 notes keep 17% (notes / LowNoteStart: 41%, and SF still paid more than nomod there). notes: color notes (0 =
         // unknown: unchanged).
         public double LowNoteSpeedBlend(double nomod, double modifier, int notes)
