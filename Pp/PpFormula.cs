@@ -45,8 +45,9 @@ namespace RatingAPI.Pp
         // #10 in prod, #45). Both together: 1.056, 1.068, 1.022, Pandita #6, top 1000 rank correlation 0.993, worth
         // slopes unchanged. AccCurvePower doesn't move stars (read at 96%).
         public double LowStarCurvePower { get; set; } = 1.0;
-        public double LowStarCurveStart { get; set; } = 7;
-        public double LowStarCurveEnd { get; set; } = 10;
+        // x0.9606 with StarScale (7, 10): the same maps, the same power.
+        public double LowStarCurveStart { get; set; } = 6.7242;
+        public double LowStarCurveEnd { get; set; } = 9.606;
         // The acc curve power on the lowest-star maps (CurvePowerAt), before the ramp above: VeryLowStarCurvePower up to
         // VeryLowStarCurveStart stars, then linearly to LowStarCurvePower at VeryLowStarCurveEnd. Equal to LowStarCurvePower
         // = off. 1.08: the best plays under 4 stars topped out at 690-710 pp (#1 scores, best of the band) against 775-818
@@ -58,8 +59,9 @@ namespace RatingAPI.Pp
         // (2-3 stars: median 172 -> 531 pp, #1 +12%). C -3 on the 99.5% row only moved one 2 star play (711 -> 746).
         // Doesn't move stars (read at 96%).
         public double VeryLowStarCurvePower { get; set; } = 1.08;
-        public double VeryLowStarCurveStart { get; set; } = 3;
-        public double VeryLowStarCurveEnd { get; set; } = 5;
+        // x0.9606 with StarScale (3, 5).
+        public double VeryLowStarCurveStart { get; set; } = 2.8818;
+        public double VeryLowStarCurveEnd { get; set; } = 4.803;
         // 0.2193 -> 0.1874 (BalanceTuner) after DENSITY_CAP 1: dense low-tech maps lost pass, so tech-heavy maps were worth
         // more than others of their stars. -> 0.1695 after the acc rating's movement correction (AccRating.EffectiveAcc),
         // which raised the acc of high-movement maps (tech share slope 0.047 -> 0.007). -> 0.1485 after the 4-32 s pass
@@ -85,8 +87,12 @@ namespace RatingAPI.Pp
         // StarDivisor 45.25 -> 650 * (45.25 / 650)^(1 / 1.3) and StarExponent 0.9039 -> 0.9039 * 1.3 keep every map's stars
         // (exactly above LowStarBonusEnd; +0.04 on average under it). PpMultiplier 1.146 -> 1.0786 keeps the top 1000's
         // totals on average (#1 22380, #1000 14950). -> 1.0833 with AccCurvePower 0.9 (top 1000 kept on average).
+        // StarScale 1.2131 -> 1.1653 (x0.9606): Dev's (24 Oct) ranked stars had drifted above prod's (median 7.26 vs 6.97,
+        // p99 14.14 vs 13.19), now the same median (6.97; p99 13.59, p1 2.18 vs 1.39, not fitted). Every map's stars x0.9606:
+        // the star thresholds pp reads (LowStarCurveStart / End, VeryLowStarCurveStart / End, LowStarBonusEnd) are x0.9606
+        // and LowStarBonus / 0.9606^LowStarBonusPower, so every score's pp is unchanged.
         public double StarDivisor { get; set; } = 83.6925;
-        public double StarScale { get; set; } = 1.2131;
+        public double StarScale { get; set; } = 1.1653;
         public double StarExponent { get; set; } = 1.17507;
         // -> 1.0625 with TechWeight 0.124 (every map has some tech pp, so the top 1000's average rose 16403 -> 16724; x0.9808
         // keeps it). -> 1.0597 with the low star curve power and bonus to 9-10 stars: the top 1000's average back to prod's
@@ -112,8 +118,9 @@ namespace RatingAPI.Pp
         // pp most under 3 stars (x1.44): with it, pp at the predicted acc no longer falls from 1 to 4 stars.
         // -> 0.006 up to 9 stars (was 0.0321 up to 4.49): +10% at 1 star, +8.5% at 2, +6.9% at 3, +5.3% at 4, +3.8% at 5,
         // +1.5% at 7, nothing from 9 (was +17.6%, +11%, +5.4%, +1%, 0), with LowStarCurveStart / End above.
-        public double LowStarBonus { get; set; } = 0.006;
-        public double LowStarBonusEnd { get; set; } = 9;
+        // 0.006 up to 9 -> 0.0063371 up to 8.6454 with StarScale x0.9606: the same bonus on the same maps.
+        public double LowStarBonus { get; set; } = 0.0063371;
+        public double LowStarBonusEnd { get; set; } = 8.6454;
         public double LowStarBonusPower { get; set; } = 1.36;
 
         public static PpFormula Current { get; set; } = new();

@@ -339,33 +339,31 @@
         public double SliderTiltRange { get; set; } = 0.015;
 
         // Low note nerf: maps with few notes (under LowNoteStart color notes, LackMapCalculation.NoteCount; 0 = unknown, no
-        // nerf) are worth too much for how easily they're grinded to 100%. Above the map's predicted acc, LowNoteGainCut of what
-        // the curve gains over its value there is cut (all of it under LowNoteGainFullBelow notes, fading to none at
-        // LowNoteStart on ln(notes), LowNoteShare), so scores under the predicted acc (most players') keep their pp and what
-        // grinding towards 100% adds is nerfed; maps predicted lower, whose curve gains more from there to 100%, lose more of
-        // their 100% (Your Best Friend Normal, 47 notes, 99.4%). The cut is times the span factor (LowNoteSpanFactor, the
-        // grind time), and past the span where it's gone a length bonus (LowNoteBonusAt) multiplies the whole curve.
+        // nerf) are worth too much for how easily they're grinded to 100%. The whole curve is multiplied by LowNoteMultiplier
+        // (x0.80 at 20 notes, never under LowNoteMinMultiplier, times the span factor: x0.80 for Quiet Water Easy, 20 notes
+        // over 18 s, x0.74 with SF, x0.82 with SS; x1 for RTX 20000 Easy, 20 notes over 111 s, then its length bonus +5.5%),
+        // so the curve stays smooth: LowNoteUniformShare 1, LowNoteGainCut 0. The gain cut below (0.4) bent the curve at the
+        // predicted acc (its slope x0.6 above it, a kink in the acc curve): LowNoteGainCut of what the curve gained over its
+        // value there was cut (all of it under LowNoteGainFullBelow notes, fading to none at LowNoteStart on ln(notes),
+        // LowNoteShare, times the span factor), so scores under the predicted acc kept their pp (Dev, 24 Oct, 100% nomod / SS
+        // / FS / SF: Quiet Water Easy 625 / 634 / 611 / 592, RTX 20000 Easy 680 / 694 / 664 / 646, the 40-60 note maps
+        // 900-970 nomod, 770-860 SF). LowNoteShare still scales the length bonus (LowNoteBonusAt).
         // Speed modifiers don't raise these maps' ratings (LowNoteSpeedBlend): faster is a shorter grind, not a harder map.
-        // Dev, 24 Oct (100% nomod / SS / FS / SF): Quiet Water Easy (20 notes, 18 s) 553 / 540 / 575 / 603 -> 625 / 634 / 611 /
-        // 592; RTX 20000 Easy (20 notes, 111 s) 579 / 579 / 581 / 600 -> 680 / 694 / 664 / 646; the 40-60 note maps'
-        // 1000-1165 -> 900-970 nomod, 770-860 SF; their worth and the balance unchanged. Before, the whole curve was multiplied
-        // by 1 - (1 - LowNoteRefMultiplier) x ln(LowNoteStart / notes) / ln(LowNoteStart / LowNoteRefNotes) (x0.80 at 20
-        // notes, never under LowNoteMinMultiplier): LowNoteUniformShare 1, LowNoteGainCut 0; that multiplier (with the span
-        // factor) is still the curve's for maps without a predicted acc. Pass and tech pp aren't nerfed. LowNoteStart 0 = off.
+        // Pass and tech pp aren't nerfed. LowNoteStart 0 = off.
         public double LowNoteStart { get; set; } = 115;
         public double LowNoteRefNotes { get; set; } = 20;
         public double LowNoteRefMultiplier { get; set; } = 0.8;
         public double LowNoteMinMultiplier { get; set; } = 0.5;
-        public double LowNoteUniformShare { get; set; } = 0;
-        public double LowNoteGainCut { get; set; } = 0.4;
+        public double LowNoteUniformShare { get; set; } = 1;
+        public double LowNoteGainCut { get; set; } = 0;
         public double LowNoteGainFullBelow { get; set; } = 70;
 
         // Span factor: a long map with few notes is as easy to play as a short one but takes longer to grind (RTX 20000 Easy,
         // 20 notes over 111 s, against Quiet Water Easy's 20 over 18 s: its top 10 at 99.4-99.7% paid 456 pp, Quiet Water's at
         // 99.9% 509). 1 - LowNoteSpanWeight x ln(span / LowNoteSpanStart) / ln(LowNoteSpanRef / LowNoteSpanStart), between
-        // LowNoteSpanMinFactor and LowNoteSpanMaxFactor: all of the cut at LowNoteSpanStart, none at LowNoteSpanRef, more under
-        // LowNoteSpanStart. The span is the first to the last color note in real time (song time / the speed modifier's,
-        // LackMapCalculation.NoteSpan; 0 = unknown, factor 1), so FS and SF, shorter grinds, keep more of the cut and SS less.
+        // LowNoteSpanMinFactor and LowNoteSpanMaxFactor: all of the nerf at LowNoteSpanStart, none at LowNoteSpanRef, more
+        // under LowNoteSpanStart. The span is the first to the last color note in real time (song time / the speed modifier's,
+        // LackMapCalculation.NoteSpan; 0 = unknown, factor 1), so FS and SF, shorter grinds, get more of the nerf and SS less.
         public double LowNoteSpanStart { get; set; } = 18;
         public double LowNoteSpanRef { get; set; } = 75;
         public double LowNoteSpanWeight { get; set; } = 1;
