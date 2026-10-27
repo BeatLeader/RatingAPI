@@ -101,7 +101,8 @@ namespace RatingAPI.Pp
         // rose 16320 -> 16379 (at 1.0321, the old formula's 16396 at 1.0369).
         // -> 1.0230 (x0.9901) with RatingAPI's hard swing correction (AccRating.HardSwingMultiplier) and ONE_SABER_NERF 0.44:
         // the top 1000's average rose 16397 -> 16561.
-        public double PpMultiplier { get; set; } = 1.0230;
+        // -> 1.0211 (x0.998) with LowStarBonus x2: the top 1000's average rose 16344 -> 16375 (Dev Autoreweighted, simulated).
+        public double PpMultiplier { get; set; } = 1.0211;
 
         // Low star bonus: maps under LowStarBonusEnd stars pay more, without changing their stars (+45% at 1 star, +17% at 2,
         // +6% at 3, nothing from 4). Top players farm the easiest maps to 99%+, but stars are measured at 96%, so the
@@ -119,7 +120,16 @@ namespace RatingAPI.Pp
         // -> 0.006 up to 9 stars (was 0.0321 up to 4.49): +10% at 1 star, +8.5% at 2, +6.9% at 3, +5.3% at 4, +3.8% at 5,
         // +1.5% at 7, nothing from 9 (was +17.6%, +11%, +5.4%, +1%, 0), with LowStarCurveStart / End above.
         // 0.006 up to 9 -> 0.0063371 up to 8.6454 with StarScale x0.9606: the same bonus on the same maps.
-        public double LowStarBonus { get; set; } = 0.0063371;
+        // -> 0.0126742 (x2): acc players' best low-star plays stayed off their profile's first page (Astrais, Dev
+        // Autoreweighted, 26 Oct: Burn Easy 99.61% PM #14, Trauma Hard 99.03% PM #21, for a 548 pp #8 play), and the best
+        // plays under 4 stars topped out at 709-763 pp against 767-816 from 8 to 13 stars. Simulated on Dev Autoreweighted's
+        // scores (stars kept): about +9% at 1 star, +8% at 2, +6% at 3, +5% at 4, +4% at 5, +1% at 7; Burn Easy #1, Trauma
+        // Hard #4; best plays at 1-5 stars 765, 788, 769, 792, 789 (8-13 stars unchanged); the top 1000's top 8 plays under
+        // 5 stars 1.8% -> 3.1%; top 1000 average +0.2% (PpMultiplier takes it back), nobody loses pp, 17 of the top 1000 gain
+        // over 3% (Viking #162 +6.8%). Worth doesn't see a band-wide change (each map is compared with others of its stars),
+        // so the acc reweighter doesn't undo it. x3 also took Powerful Normal to #5, but the best plays at 1-6 stars (813-842)
+        // then paid more than any from 8 stars.
+        public double LowStarBonus { get; set; } = 0.0126742;
         public double LowStarBonusEnd { get; set; } = 8.6454;
         public double LowStarBonusPower { get; set; } = 1.36;
 
@@ -134,6 +144,28 @@ namespace RatingAPI.Pp
         // little more (+0.020 / +0.018) for tech 18 counting as 13.5 / 13.2.
         public double TechTopKnee { get; set; } = 12;
         public double TechTopSlope { get; set; } = 0.33;
+
+        // Acc curve top compression: above AccTopKnee accuracy, the curve rises AccTopSlope as fast (curve(knee) + (curve(acc)
+        // - curve(knee)) x AccTopSlope, before the acc curve power). 1 = off. With LowStarBonus x2 the best plays under 4
+        // stars rose 709-763 -> 741-777 pp, most on scores far above the 99% the bonus was for (Burn Easy, whose 99-99.5%
+        // scores paid the same players +0.68 over their other maps). Only 2822 ranked scores (0.06%) are above 99.2%, all on
+        // 1-4 star maps (1297 / 1208 / 306 / 11). Simulated on Dev Autoreweighted with LowStarBonus x2 and the acc
+        // reweighter's LowStarTolerance: -2.2% / -3.9% / -5.8% at 99.5 / 99.75 / 100% on the base curve; best plays at 1-4
+        // stars 741, 766, 752, 777 -> 708, 750, 740, 772; top 1000 median unchanged, 4 lose over 1% (Viking #61 -1.6%);
+        // Astrais's Burn Easy 99.61% PM 546 -> 531, their 98.98-99.14% plays unchanged. Slope 0.8: 676, 734, 740, 767, 10
+        // over 1%. Not in the per-map curves (CurveSettings.Table's A / C could flatten them above 99.15%): the acc rating
+        // reads them at the predicted acc (+0.19%), above 99.15% for maps predicted over ~98.96%, and a lower curve there
+        // raises the acc rating (curve^-0.8222): Burn Easy's pay at 96% (its stars) would rise about 4% and its 99.61% about
+        // cancel out. Doesn't move stars or acc ratings.
+        public double AccTopKnee { get; set; } = 0.992;
+        public double AccTopSlope { get; set; } = 0.9;
+
+        // The curve value with the acc top compression (curveAtKnee: the curve at AccTopKnee)
+        public float AccTop(float curveValue, float curveAtKnee)
+        {
+            if (AccTopSlope == 1 || !(curveValue > curveAtKnee)) return curveValue;
+            return curveAtKnee + (curveValue - curveAtKnee) * (float)AccTopSlope;
+        }
 
         public PpFormula Clone() => (PpFormula)MemberwiseClone();
 
