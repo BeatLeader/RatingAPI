@@ -157,8 +157,14 @@ namespace RatingAPI.Pp
         // reads them at the predicted acc (+0.19%), above 99.15% for maps predicted over ~98.96%, and a lower curve there
         // raises the acc rating (curve^-0.8222): Burn Easy's pay at 96% (its stars) would rise about 4% and its 99.61% about
         // cancel out. Doesn't move stars or acc ratings.
-        public double AccTopKnee { get; set; } = 0.992;
-        public double AccTopSlope { get; set; } = 0.9;
+        // 0.992 / 0.9 -> 0.99 / 0.8 (Dev Acc, 27 Oct, rescored, no acc reweight): players found the low-star acc maps still
+        // too high at the top (Powerful Normal, Falling Easy, Avalanche Easy). Best scores: Burn Easy 743 -> 696, let you
+        // Easy 787 -> 735, Burn Normal 740 -> 707, Illuyanka Easy 758 -> 724, Falling Easy 745 -> 726, Avalanche Easy 719 ->
+        // 691, Powerful Normal 745 -> 737 (its best, 99.11% SF, is just past the knee); best plays at 1 / 2 / 3 stars 668,
+        // 787, 745 -> 623, 735, 737, 4 stars and up unchanged. Worth barely moves (Burn Easy +0.273 -> +0.266): every acc
+        // map of those stars loses about as much. With it the acc reweighter doesn't run under 4 stars (AccReweighter.MinStars).
+        public double AccTopKnee { get; set; } = 0.99;
+        public double AccTopSlope { get; set; } = 0.8;
 
         // The curve value with the acc top compression (curveAtKnee: the curve at AccTopKnee)
         public float AccTop(float curveValue, float curveAtKnee)
