@@ -3,6 +3,8 @@ using Microsoft.ML.OnnxRuntime.Tensors;
 using Parser.Map;
 using Parser.Map.Difficulty.V3.Base;
 using Parser.Map.Difficulty.V3.Grid;
+using System.Collections.Generic;
+using System.Reflection;
 
 namespace RatingAPI.Controllers
 {
@@ -21,17 +23,115 @@ namespace RatingAPI.Controllers
 
     public class InferPublish
     {
-        private const int BatchSize = 4;
-        private const int NumThreads = 4;
+        // Windows per ONNX call. Each call has a fixed cost, so a whole map in a few calls is much faster than 4 at a time
+        // (the results are the same: every window is predicted on its own).
+        private const int BatchSize = 512;
+        private const int NumThreads = 1; // Reduce per-session threads since we'll have multiple sessions
         private const int preSegmentSize = 12;
         private const int postSegmentSize = 12;
         private DataProcessing dataProcessing = new DataProcessing();
 
         private static object inferenceSessionLock = new();
-        private static InferenceSession inferenceSessionAccNew = new InferenceSession(Path.Combine(AppContext.BaseDirectory, "model_sleep_bl.onnx"), new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = NumThreads, ExecutionMode = ExecutionMode.ORT_SEQUENTIAL });
-        private static InferenceSession inferenceSessionAcc = new InferenceSession(Path.Combine(AppContext.BaseDirectory, "model_sleep_4LSTM_acc.onnx"), new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = NumThreads, ExecutionMode = ExecutionMode.ORT_SEQUENTIAL });
-        private static InferenceSession inferenceSessionSpeed = new InferenceSession(Path.Combine(AppContext.BaseDirectory, "model_sleep_4LSTM_speed.onnx"), new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = NumThreads, ExecutionMode = ExecutionMode.ORT_SEQUENTIAL });
-        private static InferenceSession tagSession = new InferenceSession(Path.Combine(AppContext.BaseDirectory, "tagging_model.onnx"));
+        
+        // Thread-local inference sessions for parallel processing
+        private static ThreadLocal<InferenceSession?> _inferenceSessionAccNewThreadLocal = new ThreadLocal<InferenceSession?>(() => null);
+        private static ThreadLocal<InferenceSession?> _inferenceSessionAccThreadLocal = new ThreadLocal<InferenceSession?>(() => null);
+        private static ThreadLocal<InferenceSession?> _inferenceSessionSpeedThreadLocal = new ThreadLocal<InferenceSession?>(() => null);
+        
+        // Keep static versions for backward compatibility and tag session (less frequently used)
+        private static InferenceSession? _inferenceSessionAccNew;
+        private static InferenceSession? _inferenceSessionAcc;
+        private static InferenceSession? _inferenceSessionSpeed;
+        private static InferenceSession? _tagSession;
+
+        // Number of values per note the accuracy model expects (last input dimension):
+        // 49 for the old model, 53 for a model trained with the note-type features.
+        private static readonly Lazy<int> AccModelNoteSize = new(() =>
+        {
+            using var session = new InferenceSession(LoadEmbeddedResource("model_sleep_bl.onnx"));
+            var dims = session.InputMetadata["input_1"].Dimensions;
+            int size = dims[dims.Length - 1];
+            if (size != DataProcessing.BaseNoteSize && size != DataProcessing.BaseNoteSize + DataProcessing.NoteKindFeatures)
+            {
+                throw new InvalidOperationException($"model_sleep_bl.onnx expects {size} values per note; DataProcessing supports {DataProcessing.BaseNoteSize} or {DataProcessing.BaseNoteSize + DataProcessing.NoteKindFeatures}.");
+            }
+            return size;
+        });
+
+        public InferPublish()
+        {
+            // Build inputs in the layout the embedded model was trained with.
+            DataProcessing.UseNoteKindFeatures = AccModelNoteSize.Value == DataProcessing.BaseNoteSize + DataProcessing.NoteKindFeatures;
+        }
+
+        private static byte[] LoadEmbeddedResource(string resourceName)
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            var fullResourceName = $"RatingAPI.{resourceName}";
+            
+            using (var stream = assembly.GetManifestResourceStream(fullResourceName))
+            {
+                if (stream == null)
+                {
+                    // List available resources for debugging
+                    var availableResources = string.Join(", ", assembly.GetManifestResourceNames());
+                    throw new FileNotFoundException($"Embedded resource '{fullResourceName}' not found. Available resources: {availableResources}");
+                }
+                
+                using (var memoryStream = new MemoryStream())
+                {
+                    stream.CopyTo(memoryStream);
+                    return memoryStream.ToArray();
+                }
+            }
+        }
+
+        private static InferenceSession GetInferenceSessionAccNew()
+        {
+            // Try thread-local first
+            if (_inferenceSessionAccNewThreadLocal.Value == null)
+            {
+                var modelData = LoadEmbeddedResource("model_sleep_bl.onnx");
+                _inferenceSessionAccNewThreadLocal.Value = new InferenceSession(modelData, new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = NumThreads, ExecutionMode = ExecutionMode.ORT_SEQUENTIAL });
+            }
+            return _inferenceSessionAccNewThreadLocal.Value;
+        }
+
+        private static InferenceSession GetInferenceSessionAcc()
+        {
+            if (_inferenceSessionAccThreadLocal.Value == null)
+            {
+                var modelData = LoadEmbeddedResource("model_sleep_4LSTM_acc.onnx");
+                _inferenceSessionAccThreadLocal.Value = new InferenceSession(modelData, new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = NumThreads, ExecutionMode = ExecutionMode.ORT_SEQUENTIAL });
+            }
+            return _inferenceSessionAccThreadLocal.Value;
+        }
+
+        private static InferenceSession GetInferenceSessionSpeed()
+        {
+            if (_inferenceSessionSpeedThreadLocal.Value == null)
+            {
+                var modelData = LoadEmbeddedResource("model_sleep_4LSTM_speed.onnx");
+                _inferenceSessionSpeedThreadLocal.Value = new InferenceSession(modelData, new Microsoft.ML.OnnxRuntime.SessionOptions { IntraOpNumThreads = NumThreads, ExecutionMode = ExecutionMode.ORT_SEQUENTIAL });
+            }
+            return _inferenceSessionSpeedThreadLocal.Value;
+        }
+
+        private static InferenceSession GetTagSession()
+        {
+            if (_tagSession == null)
+            {
+                lock (inferenceSessionLock)
+                {
+                    if (_tagSession == null)
+                    {
+                        var modelData = LoadEmbeddedResource("tagging_model.onnx");
+                        _tagSession = new InferenceSession(modelData);
+                    }
+                }
+            }
+            return _tagSession;
+        }
 
         // Replace with this to use gpu. Requires Microsoft.ML.OnnxRuntime.Gpu nuget
         //private static InferenceSession inferenceSession = new InferenceSession(AppContext.BaseDirectory + "\\model_sleep_4LSTM_acc.onnx", Microsoft.ML.OnnxRuntime.SessionOptions.MakeSessionOptionWithCudaProvider());
@@ -97,25 +197,24 @@ namespace RatingAPI.Controllers
             float[] flatInput = input.SelectMany(v => v.SelectMany(v => v.Select(v => (float)v))).ToArray();
             var modelInput = new List<NamedOnnxValue>
             {
-                NamedOnnxValue.CreateFromTensor("input_1", new DenseTensor<float>(flatInput, new int[] { input.Length, 32, 49 })),
+                NamedOnnxValue.CreateFromTensor("input_1", new DenseTensor<float>(flatInput, new int[] { input.Length, DataProcessing.segmentSize, DataProcessing.noteSize })),
             };
 
-            var outputs = new float[input.Length, 8];
+            int predictionSize = DataProcessing.predictionSize;
+            var outputs = new float[input.Length, predictionSize];
 
-            lock (inferenceSessionLock)
+            // Remove the lock - each thread has its own session now
+            using (var output = GetInferenceSessionAccNew().Run(modelInput, new[] { "time_distributed_2" }))
             {
-                using (var output = (inferenceSessionAccNew).Run(modelInput, new[] { "time_distributed_2" }))
-                {
-                    var flatOutput = (output.First().Value as IEnumerable<float>).ToArray();
-                    System.Buffer.BlockCopy(flatOutput, 0, outputs, 0, outputs.Length * sizeof(float));
-                }
+                var flatOutput = (output.First().Value as IEnumerable<float>).ToArray();
+                System.Buffer.BlockCopy(flatOutput, 0, outputs, 0, outputs.Length * sizeof(float));
             }
 
             var listOutputs = new List<float[]>();
             for (int i = 0; i < input.Length; ++i)
             {
-                var output = new float[8];
-                for (int j = 0; j < 8; ++j)
+                var output = new float[predictionSize];
+                for (int j = 0; j < predictionSize; ++j)
                 {
                     output[j] = outputs[i, j];
                 }
@@ -155,9 +254,10 @@ namespace RatingAPI.Controllers
                 for (int j = 0; j < batchPred.Length; j++)
                 {
                     var pred = batchPred[j];
-                    var inp = batchInp.Skip(DataProcessing.preSegmentSize).Take(batchInp.Count - DataProcessing.preSegmentSize - DataProcessing.preSegmentSize).ToArray()[0];
+                    // Skip the empty padding slots at the end of the last window.
+                    var inp = batchInp[DataProcessing.preSegmentSize + j];
 
-                    if (inp.Sum() == 0.0)
+                    if (inp.All(v => v == 0.0))
                     {
                         continue;
                     }
@@ -539,7 +639,7 @@ namespace RatingAPI.Controllers
                 NamedOnnxValue.CreateFromTensor("float_input", input)
             };
 
-            using var results = tagSession.Run(inputs);
+            using var results = GetTagSession().Run(inputs);
 
             return results.First().AsTensor<string>().First();
         }

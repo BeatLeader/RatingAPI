@@ -2,48 +2,104 @@
 {
     public class AccRating
     {
-        public List<(double, double)> PointList { get; set; } = new()
-        {
-                (1.0, 7.424),
-                (0.999, 6.241),
-                (0.9975, 5.158),
-                (0.995, 4.010),
-                (0.9925, 3.241),
-                (0.99, 2.700),
-                (0.9875, 2.303),
-                (0.985, 2.007),
-                (0.9825, 1.786),
-                (0.98, 1.618),
-                (0.9775, 1.490),
-                (0.975, 1.392),
-                (0.9725, 1.315),
-                (0.97, 1.256),
-                (0.965, 1.167),
-                (0.96, 1.101),
-                (0.955, 1.047),
-                (0.95, 1.000),
-                (0.94, 0.919),
-                (0.93, 0.847),
-                (0.92, 0.786),
-                (0.91, 0.734),
-                (0.9, 0.692),
-                (0.875, 0.606),
-                (0.85, 0.537),
-                (0.825, 0.480),
-                (0.8, 0.429),
-                (0.75, 0.345),
-                (0.7, 0.286),
-                (0.65, 0.246),
-                (0.6, 0.217),
-                (0.0, 0.000)
-        };
+        // acc rating = ACC_SCALE x Curve(EffectiveAcc(predictedAcc, pass, hit distance) + ACC_OFFSET) ^ -ACC_EXPONENT.
+        // portaBLe's balance tuner (Balance Tuning page) suggests ACC_OFFSET; ACC_SCALE is its reference. portaBLe's
+        // ReplayUtils.AccRating uses this class, so change them here only.
+        // ACC_EXPONENT: 1 / Curve's top end is steeper than prod's acc ratings; fitted on the quantiles of prod's ranked acc
+        // ratings (median 8.54 vs 8.68, p95 11.93 vs 11.89, p99 13.00 vs 12.63). portaBLe's acc pp takes the acc rating to the
+        // inverse power (PpFormula.AccRatingPower), so acc pp is what it was with the power 1. (Was 15.1 / Curve with a display
+        // curve 1.4528 x rating^0.8222 on top: 13.5382 = 1.4528 x 15.1^0.8222.)
+        public const double ACC_SCALE = 13.5382;
+        public const double ACC_EXPONENT = 0.8222;
+        public const double ACC_OFFSET = 0.0019;
 
-        public double GetRating(double? predictedAcc, double? passRating, double? techRating)
+        // Hard map correction. Below HARD_MAP_KNEE predicted acc, top players fall further behind the Acc AI's prediction
+        // the harder the map gets (after removing each player's own level, top 100 players: -0.4% at 96.65%, -1.1% at 96%,
+        // -1.5% at 95.4%, beyond a smooth trend that holds from 96.8% to 99%). Their pp stopped rising past about 12 stars.
+        // The acc rating uses a predicted acc lowered by HARD_MAP_SLOPE times the distance below the knee, capped at
+        // HARD_MAP_FLOOR (the edge of the fitted data). Map data only at rating time: the constants were fitted offline on
+        // scores (rating-fit-scores + rating-fit-modifiers exports, Refresh/Tools/hard_map_offset_fit.py). The stored
+        // predicted acc and the per-map curves are unchanged. Set HARD_MAP_SLOPE to 0 to turn it off.
+        public const double HARD_MAP_KNEE = 0.9675;
+        public const double HARD_MAP_SLOPE = 1.24;
+        public const double HARD_MAP_FLOOR = 0.95;
+
+        // Movement and high pass corrections. The Acc AI predicts the accuracy of the notes players cut (its targets leave
+        // misses and bad cuts out), and where the hands travel far, or the pass is very high, players lose more to misses and
+        // bad cuts: top players fall further behind the prediction there than the hard map correction expects. Fitted on the
+        // top 300 players' scores after removing each player's own level: -3% acc per meter of mean hit distance (Analyzer
+        // Ratings.HitDistance) above 0.62 m (the median map; t -8 on the 434 maps under 97% predicted acc, t -18 on all),
+        // and -0.214% per pass point above 14.52 (t -5; fitted as -0.32% per point above 11.5 on the pass display of the
+        // time). The Purple Dimension (0.75 m, players -2.5% against the prediction) was too low for what players
+        // can get on it.
+        // The hit distance one is phased out between 97% and 97.5% predicted acc: the acc rating is much more sensitive to
+        // the effective acc on easier maps (steeper curve), and applied to every map it made easy maps with a lot of movement
+        // worth far too much (worth spread 0.49 -> 0.56). Hit distance is capped at 0.8 m: the shortfall stops growing there
+        // (-1.0% at 0.75-0.85 m, -0.9% above), and without the cap maps with extreme spacing (You Are Mine Normal 1.04 m,
+        // toromi hearts 2 0.94 m) got too much.
+        // Pass alone fitted on the raw top 10 looked stronger, but that's who plays those maps: at 0.54% Godspeed became
+        // overvalued. Top players also lose more acc on tech maps, but tech pp already pays for that: adding tech here made
+        // tech maps worth far too much.
+        public const double HIT_DISTANCE_KNEE = 0.62;
+        public const double HIT_DISTANCE_SLOPE = 0.030;
+        public const double HIT_DISTANCE_CAP = 0.80;
+        public const double HIT_DISTANCE_FULL_BELOW = 0.97;
+        public const double HIT_DISTANCE_NONE_ABOVE = 0.975;
+        public const double HIGH_PASS_KNEE = 14.52;
+        public const double HIGH_PASS_SLOPE = 0.00214;
+
+        // Very high pass buff, on top of the high pass correction: HIGH_PASS_BUFF less effective acc from HIGH_PASS_BUFF_FULL
+        // pass, ramped in linearly from HIGH_PASS_BUFF_START (no step at the threshold; flat above, so the 17 pass maps don't
+        // gain more than the 14.5 ones). Worth (Megametric75) said the pass 14+ maps were average for their stars, but split
+        // by player rank it was -20% for the top 100 and +31% for #2001-10000, whose few high plays put these maps high in
+        // their weighted list. Without the weight, each score's pp / the player's top pp was 4.1% under maps of the same
+        // stars on the pass 14+ maps in every rank range (pass 12-14 maps +0.3% to +1.2%); their best scores sit 0.25-0.5%
+        // under the predicted acc where other maps' are 0.1-0.4% over. 0.55% raises their scores' pp by about 4.1% (the
+        // 22 maps above 14 pass; Dev database, no acc reweight). Set HIGH_PASS_BUFF to 0 to turn it off.
+        public const double HIGH_PASS_BUFF_START = 13.5;
+        public const double HIGH_PASS_BUFF_FULL = 14.5;
+        public const double HIGH_PASS_BUFF = 0.0055;
+
+        // The predicted acc the acc rating uses (see the corrections above). passRating: the pass rating; hitDistance:
+        // Ratings.HitDistance. 0 leaves that correction out.
+        public static double EffectiveAcc(double predictedAcc, double passRating = 0, double hitDistance = 0) =>
+            predictedAcc - HARD_MAP_SLOPE * Math.Max(0, HARD_MAP_KNEE - Math.Max(predictedAcc, HARD_MAP_FLOOR))
+            - HIT_DISTANCE_SLOPE * Math.Max(0, Math.Min(hitDistance, HIT_DISTANCE_CAP) - HIT_DISTANCE_KNEE)
+                * Math.Clamp((HIT_DISTANCE_NONE_ABOVE - predictedAcc) / (HIT_DISTANCE_NONE_ABOVE - HIT_DISTANCE_FULL_BELOW), 0, 1)
+            - HIGH_PASS_SLOPE * Math.Max(0, passRating - HIGH_PASS_KNEE)
+            - HIGH_PASS_BUFF * Math.Clamp((passRating - HIGH_PASS_BUFF_START) / (HIGH_PASS_BUFF_FULL - HIGH_PASS_BUFF_START), 0, 1);
+
+        // Hard swing correction: maps whose hardest swings are scattered over the map (Analyzer Ratings.HardSwingRatio above 1)
+        // were worth less than others of their stars at every pass (Dev, 24 Oct, no acc reweight: -4.8% for the maps with
+        // (ratio - 1) x pass above 4, +0.8% under 1), most on pass 11+ maps: the pass rating averages the hardest windows, so
+        // isolated hard swings count little, and the Acc AI predicts the accuracy of cut notes, so the misses and bad cuts on
+        // them don't count either (top 300 players' accuracy against the prediction, after their own level, -0.8% to -1.2%
+        // on the spikiest pass 11+ maps). The acc rating is multiplied by 1 + HARD_SWING_SLOPE x the excess of (ratio - 1)
+        // x pass over HARD_SWING_KNEE, up to HARD_SWING_CAP. A multiplier, not a lower effective acc: the same acc pp change
+        // at every predicted acc (the curve is much steeper on easy maps). Fitted on the worth by (ratio - 1) x pass (in
+        // memory, the maps' own swing data). Re-rated: 3-4 -0.020 -> -0.007, 4+ -0.048 -> -0.017, under 1 +0.008 ->
+        // +0.006; worth spread 0.0389 -> 0.0377, tech share slope -0.0052 -> -0.0032, 355 maps raised 2%+ (up to x1.093).
+        // 3% per point flattened it fully but put about twice the 30pp+ top plays on the raised maps. One hand maps (ratio 0) aren't changed. Most of
+        // the pass 11+ maps far under (Worth -3% to -25%) stay under: their shortfall against the Acc AI is their own,
+        // none of the Analyzer's features predicts it (cross-validated R2 0.15). Set HARD_SWING_SLOPE to 0 to turn it off.
+        public const double HARD_SWING_KNEE = 2.0;
+        public const double HARD_SWING_SLOPE = 0.02;
+        public const double HARD_SWING_CAP = 0.12;
+
+        // The hard swing correction's multiplier of the acc rating. hardSwingRatio: Ratings.HardSwingRatio (0: none)
+        public static double HardSwingMultiplier(double passRating, double hardSwingRatio) =>
+            hardSwingRatio > 0
+                ? 1 + Math.Min(HARD_SWING_SLOPE * Math.Max(0, (hardSwingRatio - 1) * passRating - HARD_SWING_KNEE), HARD_SWING_CAP)
+                : 1;
+
+        public double GetRating(double? predictedAcc, double? passRating, double? techRating, double hitDistance = 0, double hardSwingRatio = 0)
         {
             double difficulty_to_acc;
             if (predictedAcc > 0)
             {
-                difficulty_to_acc = 15.5f / Curve((predictedAcc ?? 0) + 0.0022f);
+                double effective = EffectiveAcc(predictedAcc ?? 0, passRating ?? 0, hitDistance);
+                difficulty_to_acc = ACC_SCALE * Math.Pow(Curve(predictedAcc ?? 0, effective + ACC_OFFSET), -ACC_EXPONENT)
+                    * HardSwingMultiplier(passRating ?? 0, hardSwingRatio);
             }
             else
             {
@@ -57,24 +113,7 @@
             return difficulty_to_acc;
         }
 
-        public float Curve(double acc)
-        {
-            int i = 0;
-            for (; i < PointList.Count; i++)
-            {
-                if (PointList[i].Item1 <= acc)
-                {
-                    break;
-                }
-            }
-
-            if (i == 0)
-            {
-                i = 1;
-            }
-
-            double middle_dis = (acc - PointList[i - 1].Item1) / (PointList[i].Item1 - PointList[i - 1].Item1);
-            return (float)(PointList[i - 1].Item2 + middle_dis * (PointList[i].Item2 - PointList[i - 1].Item2));
-        }
+        // The map's own per-map acc curve (ModifiableCurve, see Curve.GetCurve), picked by its predicted acc, at acc
+        public static float Curve(double predictedAcc, double acc) => (float)Controllers.Curve.PerMapValue(predictedAcc, acc);
     }
 }

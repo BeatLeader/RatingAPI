@@ -6,6 +6,42 @@ namespace RatingAPI.Controllers
     public class Downloader
     {
         private string _mapsDirectory = "/home/maps";
+        private static readonly HttpClient _sharedHttpClient = new HttpClient();
+        private static readonly SemaphoreSlim _downloadSemaphore = new SemaphoreSlim(4, 4);
+        private static readonly SemaphoreSlim _throttleSemaphore = new SemaphoreSlim(1, 1);
+        private static readonly TimeSpan _throttleDelay = TimeSpan.FromMilliseconds(500);
+        private static DateTime _lastRequestTime = DateTime.MinValue;
+        private const int MaxRetries = 3;
+        private static readonly TimeSpan[] RetryDelays = [
+            TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromSeconds(15)
+        ];
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _hashLocks =
+            new System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim>(StringComparer.OrdinalIgnoreCase);
+
+        static Downloader()
+        {
+            _sharedHttpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (compatible; BeatSaverDownloader/1.0)");
+        }
+
+        private static async Task ThrottleAsync()
+        {
+            await _throttleSemaphore.WaitAsync();
+            try
+            {
+                var elapsed = DateTime.UtcNow - _lastRequestTime;
+                if (elapsed < _throttleDelay)
+                {
+                    await Task.Delay(_throttleDelay - elapsed);
+                }
+                _lastRequestTime = DateTime.UtcNow;
+            }
+            finally
+            {
+                _throttleSemaphore.Release();
+            }
+        }
 
         public Downloader(string mapsDirectory)
         {
@@ -14,59 +50,142 @@ namespace RatingAPI.Controllers
 
         public string? Map(string hash)
         {
-            string lowerCaseDir = Path.Combine(_mapsDirectory, hash.ToLower());
+            return MapAsync(hash).GetAwaiter().GetResult();
+        }
+
+        public async Task<string?> MapAsync(string hash)
+        {
+            var hashKey = hash.ToLowerInvariant();
+
+            // Ensure only one MapAsync operates on the same hash concurrently.
+            var hashSemaphore = _hashLocks.GetOrAdd(hashKey, _ => new SemaphoreSlim(1, 1));
+            await hashSemaphore.WaitAsync();
+            try
+            {
+                string lowerCaseDir = Path.Combine(_mapsDirectory, hashKey);
             if (Directory.Exists(lowerCaseDir))
             {
                 return lowerCaseDir;
             }
 
-            string mapDir = Path.Combine(_mapsDirectory, hash.ToUpper());
+                string mapDir = Path.Combine(_mapsDirectory, hash.ToUpper());
 
             if (Directory.Exists(mapDir))
             {
                 return mapDir;
             }
 
-            string beatsaverUrl = $"https://beatsaver.com/api/maps/hash/{hash}";
-            using var httpClient = new HttpClient();
-            dynamic? beatsaverData = null;
-            string? downloadURL = null;
-            try {
-                var response = httpClient.GetStringAsync(beatsaverUrl).Result;
-                beatsaverData = response != null ? JsonConvert.DeserializeObject(response) : null;
-                downloadURL = string.Empty;
-            } catch (Exception e) {
-                return null;
-            }
-
-            if (beatsaverData == null) {
-                return null;
-            }
-
-            foreach (var version in beatsaverData.versions)
-            {
-                if (version.hash.ToString().ToLower() == hash.ToLower())
+                await _downloadSemaphore.WaitAsync();
+                try
                 {
-                    downloadURL = version.downloadURL;
-                    break;
+                    if (Directory.Exists(lowerCaseDir))
+                    {
+                        return lowerCaseDir;
+                    }
+
+                    if (Directory.Exists(mapDir))
+                    {
+                        return mapDir;
+                    }
+
+                string beatsaverUrl = $"https://beatsaver.com/api/maps/hash/{hash}";
+                dynamic? beatsaverData = null;
+                string? downloadURL = null;
+                
+                for (int attempt = 0; attempt <= MaxRetries; attempt++)
+                {
+                    try
+                    {
+                        await ThrottleAsync();
+                        var response = await _sharedHttpClient.GetStringAsync(beatsaverUrl);
+                        beatsaverData = response != null ? JsonConvert.DeserializeObject(response) : null;
+                        downloadURL = string.Empty;
+                        break;
+                    }
+                    catch (HttpRequestException ex) when (attempt < MaxRetries)
+                    {
+                        Console.WriteLine($"BeatSaver API request failed for {hash} (attempt {attempt + 1}/{MaxRetries + 1}): {ex.Message}. Retrying in {RetryDelays[attempt].TotalSeconds}s...");
+                        await Task.Delay(RetryDelays[attempt]);
+                    }
+                    catch (Exception)
+                    {
+                        return null;
+                    }
+                }
+
+                if (beatsaverData == null)
+                {
+                    return null;
+                }
+
+                foreach (var version in beatsaverData.versions)
+                {
+                    if (version.hash.ToString().ToLower() == hash.ToLower())
+                    {
+                        downloadURL = version.downloadURL;
+                        break;
+                    }
+                }
+
+                if (string.IsNullOrEmpty(downloadURL))
+                {
+                    return null;
+                }
+
+                byte[]? data = null;
+                for (int attempt = 0; attempt <= MaxRetries; attempt++)
+                {
+                    try
+                    {
+                        await ThrottleAsync();
+                        data = await _sharedHttpClient.GetByteArrayAsync(downloadURL);
+                        break;
+                    }
+                    catch (HttpRequestException ex) when (attempt < MaxRetries)
+                    {
+                        Console.WriteLine($"Map download failed for {hash} (attempt {attempt + 1}/{MaxRetries + 1}): {ex.Message}. Retrying in {RetryDelays[attempt].TotalSeconds}s...");
+                        await Task.Delay(RetryDelays[attempt]);
+                    }
+                    catch (Exception)
+                    {
+                        return null;
+                    }
+                }
+
+                if (data == null)
+                {
+                    return null;
+                }
+
+                using var zipStream = new MemoryStream(data);
+                using var zipArchive = new ZipArchive(zipStream);
+                Directory.CreateDirectory(mapDir);
+                // Overwrite existing files if they exist to avoid exceptions when extracting.
+                zipArchive.ExtractToDirectory(mapDir, true);
+
+                    return mapDir;
+                }
+                finally
+                {
+                    _downloadSemaphore.Release();
                 }
             }
-
-            if (string.IsNullOrEmpty(downloadURL))
+            finally
             {
-                return null;
+                // Release and try to remove the semaphore to avoid unbounded growth.
+                hashSemaphore.Release();
+                try
+                {
+                    if (hashSemaphore.CurrentCount == 1)
+                    {
+                        _hashLocks.TryRemove(hashKey, out _);
+                    }
+                }
+                catch
+                {
+                    // Ignore cleanup errors
+                }
             }
-
-            using var client = new HttpClient();
-            client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (compatible; BeatSaverDownloader/1.0)");
-            var data = client.GetByteArrayAsync(downloadURL);
-
-            using var zipStream = new MemoryStream(data.Result);
-            using var zipArchive = new ZipArchive(zipStream);
-            Directory.CreateDirectory(mapDir);
-            zipArchive.ExtractToDirectory(mapDir);
-
-            return mapDir;
         }
     }
 }

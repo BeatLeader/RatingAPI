@@ -7,25 +7,34 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="Analyzer\**" />
     <Compile Remove="beatleader-analyzer\**" />
-    <Compile Remove="beatleader-parser\**" />
+    <Compile Remove="Parser\**" />
+    <Content Remove="Analyzer\**" />
     <Content Remove="beatleader-analyzer\**" />
-    <Content Remove="beatleader-parser\**" />
+    <Content Remove="Parser\**" />
+    <EmbeddedResource Remove="Analyzer\**" />
     <EmbeddedResource Remove="beatleader-analyzer\**" />
-    <EmbeddedResource Remove="beatleader-parser\**" />
+    <EmbeddedResource Remove="Parser\**" />
+    <None Remove="Analyzer\**" />
     <None Remove="beatleader-analyzer\**" />
-    <None Remove="beatleader-parser\**" />
+    <None Remove="Parser\**" />
   </ItemGroup>
 
   <ItemGroup>
+    <None Remove="model_sleep_bl_replays_sf.csv" />
+    <None Remove="model_sleep_bl_replays_sf_njs-30.csv" />
+    <None Remove="model_sleep_bl_replays_sf_njs-30_vs_nomods.csv" />
+    <None Remove="model_sleep_bl_replays_sf_njs-base.csv" />
+    <None Remove="model_sleep_bl_replays_sf_njs-base_vs_nomods.csv" />
+    <None Remove="model_sleep_bl_replays_sf_vs_nomods.csv" />
+  </ItemGroup>
+	
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageReference Include="MathNet.Numerics" Version="6.0.0-beta2" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.23.2" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="beatleader-analyzer\beatleader-analyzer\Analyzer.csproj" />
-    <ProjectReference Include="beatleader-analyzer\Parser\beatleader-parser\Parser.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -35,18 +44,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="model_sleep_4LSTM_acc.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="model_sleep_4LSTM_speed.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="model_sleep_bl.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="tagging_model.onnx">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
+    <EmbeddedResource Include="model_sleep_bl.onnx" />
+    <EmbeddedResource Include="model_sleep_4LSTM_acc.onnx" />
+    <EmbeddedResource Include="model_sleep_4LSTM_speed.onnx" />
+    <EmbeddedResource Include="tagging_model.onnx" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="Analyzer\beatleader-analyzer\Analyzer.csproj" />
+    <ProjectReference Include="Analyzer\Parser\beatleader-parser\Parser.csproj" />
   </ItemGroup>
 
 </Project>

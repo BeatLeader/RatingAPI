@@ -22,12 +22,24 @@ namespace RatingAPI.Controllers
 
         [JsonPropertyName("balanced_tech")]
         public double TechRating { get; set; } = 0;
-        [JsonPropertyName("low_note_nerf")]
-        public double LowNoteNerf { get; set; } = 0;
-        [JsonPropertyName("multi_rating")]
-        public double MultiRating { get; set; } = 0;
+        [JsonPropertyName("multi_percentage")]
+        public double MultiPercentage { get; set; } = 0;
         [JsonPropertyName("linear_percentage")]
         public double LinearPercentage { get; set; } = 0;
+        // Sliders and curved sliders per swing (the per-map curve's slider tilt, CurveSettings.SliderTilt)
+        [JsonPropertyName("slider_percentage")]
+        public double SliderPercentage { get; set; } = 0;
+        // Analyzer Ratings.HitDistance (used by the acc rating)
+        public double HitDistance { get; set; } = 0;
+        // Analyzer Ratings.HardSwingRatio (used by the acc rating)
+        public double HardSwingRatio { get; set; } = 0;
+        // Color notes (the per-map curve's low note nerf, CurveSettings.LowNoteMultiplier; 0 = unknown)
+        [JsonPropertyName("note_count")]
+        public int NoteCount { get; set; } = 0;
+        // First to last color note in real time (song time / the speed modifier), seconds: the length nerf
+        // (CurveSettings.ShortFactor; 0 = unknown)
+        [JsonPropertyName("note_span")]
+        public double NoteSpan { get; set; } = 0;
         [JsonPropertyName("statistics")]
         public Statistics Statistics { get; set; } = new Statistics();
     }
@@ -38,12 +50,18 @@ namespace RatingAPI.Controllers
         public double PredictedAcc { get; set; } = 0;
         [JsonPropertyName("acc_rating")]
         public double AccRating { get; set; } = 0;
-        [JsonPropertyName("star_rating")]
-        public double StarRating { get; set; } = 0;
         [JsonPropertyName("lack_map_calculation")]
         public LackMapCalculation LackMapCalculation { get; set; } = new();
         [JsonPropertyName("pointlist")]
         public List<Point> PointList { get; set; } = new();
+        // What a 96% score is worth, from these ratings and PointList (Pp.PpCalculator.ToStars)
+        [JsonPropertyName("stars")]
+        public double Stars { get; set; } = 0;
+        [JsonPropertyName("song_length")]
+        public float Length { get; set; } = 0;
+        // Base NJS of the difficulty from Info.dat (the speed modifier isn't applied)
+        [JsonPropertyName("njs")]
+        public float Njs { get; set; } = 0;
     }
 
     public class Point
@@ -132,6 +150,14 @@ namespace RatingAPI.Controllers
         [HttpGet("~/ppai2/{hash}/{mode}/{diff}")]
         public ActionResult<Dictionary<string, RatingResult>> Get(string hash, string mode, int diff)
         {
+            return Get(hash, mode, diff, null);
+        }
+
+        // only: the modifiers to rate (null = all of them). portaBLe's RatingsRefresh.Overwrite only stores none, SS, FS and
+        // SFS, so it skips BFS / BSF (a third of the work: every modifier runs the Analyzer and the Acc AI again).
+        [NonAction]
+        public ActionResult<Dictionary<string, RatingResult>> Get(string hash, string mode, int diff, IReadOnlyCollection<string>? only)
+        {
             Stopwatch sw = Stopwatch.StartNew();
             var modifiers = new List<(string, double)>() {
                 ("SS", 0.85),
@@ -145,23 +171,33 @@ namespace RatingAPI.Controllers
             var difficulty = FormattingUtils.GetDiffLabel(diff);
             var mapPath = downloader.Map(hash);
             if (mapPath == null) return NotFound();
+            DifficultySet? Find(BeatmapV3? set) => set?.Difficulties.FirstOrDefault(d => d.Characteristic == CustomModeMapping(mode) && (d.BeatMap._difficultyRank == diff || d.BeatMap._difficulty == difficulty));
             BeatmapV3? mapset = null;
+            DifficultySet? map = null;
             try
             {
-                mapset = parser.TryLoadPath(mapPath);
+                // Only the requested difficulty is parsed (a mapset can have 5+ difficulties); the whole set is the fallback
+                mapset = parser.TryLoadPath(mapPath, CustomModeMapping(mode), difficulty);
+                map = Find(mapset);
+                if (map == null)
+                {
+                    mapset = parser.TryLoadPath(mapPath);
+                    map = Find(mapset);
+                }
             }
             catch (FileNotFoundException e)
             {
                 Directory.Delete(mapPath, true);
                 mapPath = downloader.Map(hash);
                 mapset = parser.TryLoadPath(mapPath);
+                map = Find(mapset);
             }
             if (mapset != null)
             {
-                var map = mapset.Difficulties.FirstOrDefault(d => d.Characteristic == CustomModeMapping(mode) && (d.BeatMap._difficultyRank == diff || d.BeatMap._difficulty == difficulty));
                 if (map == null) return results;
                 foreach ((var name, var timescale) in modifiers)
                 {
+                    if (only != null && !only.Contains(name)) continue;
                     var njsMult = 1.0;
                     if (name == "BFS" || name == "BSF")
                     {
@@ -169,6 +205,7 @@ namespace RatingAPI.Controllers
                     }
                     results[name] = GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, timescale, njsMult);
                 }
+                BlendLowNoteSpeeds(results);
             }
             _logger.LogWarning("Took " + sw.ElapsedMilliseconds);
 
@@ -244,7 +281,7 @@ namespace RatingAPI.Controllers
             if (beatmapSets == null) return null;
             var data = beatmapSets._difficultyBeatmaps.FirstOrDefault();
             if (data == null) return null;
-            var map = mapset.Difficulties.FirstOrDefault(d => d.Characteristic == mode && d.Difficulty == difficulty);
+            var map = mapset.Difficulties.FirstOrDefault();
             if (map == null) return null;
 
             return new Dictionary<string, object>
@@ -402,35 +439,73 @@ namespace RatingAPI.Controllers
             };
         }
 
+        // The low note speed blend (CurveSettings.LowNoteSpeedBlend) on every speed modifier's pass, tech and acc ratings, and
+        // their stars again. Needs the nomod ratings ("none").
+        public static void BlendLowNoteSpeeds(Dictionary<string, RatingResult> results)
+        {
+            if (!results.TryGetValue("none", out var nomod)) return;
+            int notes = nomod.LackMapCalculation.NoteCount;
+            var settings = CurveSettings.Current;
+            if (notes <= 0 || notes >= settings.LowNoteStart) return;
+            foreach (var (name, result) in results)
+            {
+                if (name == "none") continue;
+                var lack = result.LackMapCalculation;
+                lack.PassRating = settings.LowNoteSpeedBlend(nomod.LackMapCalculation.PassRating, lack.PassRating, notes);
+                lack.TechRating = settings.LowNoteSpeedBlend(nomod.LackMapCalculation.TechRating, lack.TechRating, notes);
+                result.AccRating = settings.LowNoteSpeedBlend(nomod.AccRating, result.AccRating, notes);
+                result.Stars = Pp.PpCalculator.ToStars((float)result.AccRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(result.PointList));
+            }
+        }
+
+        // First to last color note of a difficulty in real time: song seconds / timescale (LackMapCalculation.NoteSpan)
+        public static double NoteSpan(DifficultyV3 mapdata, double timescale = 1)
+        {
+            if (mapdata.Notes.Count < 2 || timescale <= 0) return 0;
+            return (mapdata.Notes.Max(n => n.Seconds) - mapdata.Notes.Min(n => n.Seconds)) / timescale;
+        }
+
         public RatingResult GetBLRatings(DifficultySet map, string characteristic, string difficulty, double bpm, double timescale, double njsMult = 1)
         {
             var mapdata = CustomModeDataMapping(characteristic, map.Data);
-            var ratings = analyzer.GetRating(mapdata, characteristic, difficulty, (float)bpm, (float)timescale);
+            var ratings = analyzer.GetRating(mapdata, characteristic, difficulty, (float)bpm, (float)timescale, (float)njsMult);
             if (ratings == null) return new();
             var lack = new LackMapCalculation
             {
                 PassRating = ratings.PassRating,
                 TechRating = ratings.TechRating,
-                LowNoteNerf = ratings.LowNoteNerf,
-                MultiRating = ratings.MultiRating,
+                MultiPercentage = ratings.MultiPercentage,
                 LinearPercentage = ratings.LinearPercentage,
+                SliderPercentage = Curve.SliderPercentage(ratings),
                 Statistics = ratings.Statistics,
+                HitDistance = ratings.HitDistance,
+                HardSwingRatio = ratings.HardSwingRatio,
+                NoteCount = mapdata.Notes.Count,
+                NoteSpan = NoteSpan(mapdata, timescale),
             };
+
+            var start = map.Data.Notes.OrderBy(x => x.Seconds).FirstOrDefault()?.Seconds ?? 9999;
+            start = Math.Min(start, map.Data.Walls.OrderBy(x => x.Seconds).FirstOrDefault()?.Seconds ?? 9999);
+            var end = map.Data.Notes.OrderByDescending(x => x.Seconds).FirstOrDefault()?.Seconds ?? 0;
+            end = Math.Max(end, map.Data.Walls.OrderByDescending(x => x.Seconds).FirstOrDefault()?.Seconds ?? 0);
+            var length = end - start;
+            if (start == 9999 || end == 0) length = 0;
 
             var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult);
             AccRating ar = new();
-            var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating);
-            accRating *= ratings.LowNoteNerf;
+            var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating, ratings.HitDistance, ratings.HardSwingRatio);
             Curve curve = new();
-            var pointList = curve.GetCurve(lack);
-            var star = curve.ToStars(0.96, accRating, lack, pointList);
+            // Per-map curve (CurveSettings.Table by predicted acc, slider tilt); scores and stars use it
+            var pointList = curve.GetCurve(lack, predictedAcc);
             RatingResult result = new()
             {
                 PredictedAcc = predictedAcc,
                 AccRating = accRating,
                 LackMapCalculation = lack,
                 PointList = pointList,
-                StarRating = star
+                Stars = Pp.PpCalculator.ToStars((float)accRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(pointList)),
+                Length = length,
+                Njs = map.BeatMap?._noteJumpMovementSpeed ?? 0
             };
             return result;
         }
