@@ -203,7 +203,7 @@ namespace RatingAPI.Controllers
             int predictionSize = DataProcessing.predictionSize;
             var outputs = new float[input.Length, predictionSize];
 
-            // Remove the lock - each thread has its own session now
+            // No lock: each thread has its own session
             using (var output = GetInferenceSessionAccNew().Run(modelInput, new[] { "time_distributed_2" }))
             {
                 var flatOutput = (output.First().Value as IEnumerable<float>).ToArray();

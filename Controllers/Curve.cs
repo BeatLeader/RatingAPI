@@ -5,13 +5,8 @@
         // The base acc curve (Pp.PpCalculator.CurveValue): acc pp = curve(acc) * AccWeight * acc rating^AccRatingPower
         public List<(double x, double y)> baseCurve = BaseTable.ToList();
 
-        // Low acc lift (24 Oct): +20% up to 80%, fading to 0 at 92% (0.91: x1.017 ... 0.85: x1.117, 0.825: x1.158; 0.6-0.8
-        // were 0.256, 0.296, 0.345, 0.404, 0.473, then 0.522, 0.581, 0.650, 0.729, 0.768). Maps players score low on were worth
-        // less for them than their other maps: Extratongue / 999 ExpertPlus had 46% / 52% of the top 5000's scores at
-        // 70-85% (11-13 star maps 20%), worth -0.176 / -0.150 (Dev, no acc reweight). Stars (a 96% score) and acc ratings
-        // (the curve at the effective acc, 95%+) don't move. Simulated (simplified PlayerAdjusted fit, Dev): worth spread
-        // 0.048 -> 0.041, maps above +0.08 132 -> 75, below -0.05 497 -> 377, those four +2.2% to +2.5%, Chrome Vox
-        // ExpertPlus +3.1%.
+        // Lifted at low acc (+20% up to 80%, fading to 0 at 92%): maps players score low on were worth less for them than
+        // their other maps. Stars (a 96% score) and acc ratings (the curve at the effective acc, 95%+) don't move.
         public static readonly (double x, double y)[] BaseTable =
         {
                 (1.0, 7.424),
@@ -61,15 +56,13 @@
         // - above A, the high-pass extension L(x) leaves A with the curve's slope there, which then keeps growing (C < 0,
         //   still exponential) or fades (0 < C <= 1; 0 = straight line).
         // The parameters only act relative to the default ModifiableCurve: value = base table(x) * modified(x) / default(x)
-        // (the table interpolated smoothly, SmoothBaseValue),
-        // so default parameters give exactly today's curve (the default ModifiableCurve is 3-6% above the table at 97-99.9%,
-        // using it directly would raise most acc pp). Never above the base curve. Only map data is used, never scores.
+        // (the table interpolated smoothly, SmoothBaseValue), so default parameters give exactly the base curve (the default
+        // ModifiableCurve itself is 3-6% above the table at 97-99.9%). Never above the base curve. Only map data is used.
         public List<Point> GetCurve(LackMapCalculation lackRatings, double predictedAcc)
         {
             var curves = PerMapCurves(predictedAcc);
             double tilt = SliderTilt(lackRatings, predictedAcc);
             var settings = CurveSettings.Current;
-            // The low note and length nerf (LowNoteMultiplier): the whole curve
             double nerf = settings.LowNoteMultiplier(lackRatings.NoteCount, lackRatings.NoteSpan);
             if (curves == null && tilt == 0)
             {
@@ -138,9 +131,8 @@
             return (new ModifiableCurve { A = a, C = row.C, K = row.K, W = row.W, K2 = row.K2, P2 = row.P2 }, new ModifiableCurve());
         }
 
-        // The base it scales is SmoothBaseValue: with the linear table the slope jumped up at every table point and fell inside
-        // each segment (the ratio falls with acc), so per-map curves were bumpy above ~98.5% (99.3-99.55% at 97% predicted:
-        // 0.10, 0.07, 0.12 per 0.05%). Same values at the table points (96% included), up to 1.34% lower between them.
+        // The base it scales is SmoothBaseValue: the linear table's slope jumps at every table point, which made per-map
+        // curves bumpy above ~98.5%. Same values at the table points (96% included), up to 1.34% lower between them.
         private static double PerMapValue((ModifiableCurve modified, ModifiableCurve standard) curves, double x)
         {
             double baseValue = SmoothBaseValue(x);
@@ -295,16 +287,11 @@
 
     // Settings of the per-map curves (Curve.GetCurve): ModifiableCurve parameters by predicted acc, linearly interpolated
     // between the rows; the first / last row applies below / above them.
-    // Goals (Loloppe): 1. 9-12* maps (predicted 96-97.5%) gave too much for scores about +1% above the predicted acc
-    // (the 800pp+ plays): K, W, K2, P2 reshape the curve around 96%, back to the default at 95.5% and from 97%.
-    // 2. true acc (<2*) and acc maps (<5*) gave too much for tiny jumps around 99%: less steep there, hugging the base
-    // curve more tightly while cutting the extreme tail, without nerfing the overall amount.
-    // The 99.5% row isn't from the first values: without it the 99% row also applied above 99%, which cut the curve value
-    // at the predicted acc of <2* maps by 19%; with it, by 6%.
-    // Table values updated 2026-10-16 (A, C and the shape K, W, K2, P2 on every row; the 96-97.5% rows now ease back to the
-    // default shape by 97.5-98.5% instead of 97%). The simulation below is for the previous table.
-    // Simulated on all ranked scores (without the 99.5% row): scores above 800pp 246 -> 31, #1 vs #2 on the top maps +7.7%
-    // -> +5.1%, the #1 player -7%, the top 100 -1.4%, map worth unchanged from 96.5% to 99% predicted acc.
+    // 1. 9-12* maps (predicted 96-97.5%) gave too much for scores about +1% above the predicted acc: K, W, K2, P2 reshape
+    // the curve around 96%, easing back to the default shape by 97.5-98.5%.
+    // 2. True acc (<2*) and acc maps (<5*) gave too much for tiny jumps around 99%: less steep there, hugging the base curve
+    // while cutting the extreme tail. The 99.5% row keeps the 99% row from applying above 99%, which would cut the curve
+    // at <2* maps' predicted acc far more.
     public class CurveSettings
     {
         public bool Enabled { get; set; } = true;
@@ -325,9 +312,8 @@
         // C never goes above 1 (the curve would go down)
         public double MaxC { get; set; } = 1;
 
-        // Slider tilt: maps with many sliders (and curved sliders) were worth more than others of their stars (Megametric75
-        // +0.17 for the 10% with the most, +0.48 for the top 3%; You Are Mine Normal, 49% sliders, +2.6), while their top
-        // scores sit as close to the predicted acc as on other maps (~0.5% under). Their curve is multiplied by
+        // Slider tilt: maps with many sliders (and curved sliders) were worth more than others of their stars, while their
+        // top scores sit as close to the predicted acc as on other maps. Their curve is multiplied by
         // e^(SliderTilt x slider share x (acc - predicted acc) in %), up to SliderTiltRange from the predicted acc: higher
         // above it, lower under it, unchanged at it (the acc rating doesn't use it; the stars do, as scores at 96%). 0 = off.
         public double SliderTilt { get; set; } = 0.2;
@@ -338,15 +324,6 @@
         // at most: one of them nerfs a bit, both nerf more, nothing is buffed. Speed modifiers don't raise low note maps'
         // ratings (LowNoteSpeedBlend), and their shorter real time makes the ShortFactor stronger. Pass and tech pp aren't
         // nerfed.
-        // Before (24-25 Oct) the notes' nerf was times a span factor (0 at 75 s, up to 1.5 under 18 s) and maps past 75 s
-        // got a length bonus up to +10%: RTX 20000 Easy (20 notes over 111 s) x1.055, a short map with 115+ notes x1, so
-        // neither alone nerfed and length buffed. Notes at most x0.95 (x0.9 at 20 notes put Quiet Water Easy's 100% at
-        // 559pp). Length at most x0.9, at 12 s: capped at x0.95 at 18 s, Quiet Water Easy (18 s) had its nomod, FS and SF
-        // at the cap, so FS and SF paid more than nomod (the speed blend keeps a little of their rating), and a 5% length
-        // nerf couldn't put RTX 20000 Easy (111 s, acc rating 2.97) over it (3.13: 6.6% more at 100% before the nerf). Now
-        // 100% on Quiet Water Easy: SS 609, nomod 604 (x0.876), FS 598, SF 591 (x0.855); RTX 20000 Easy 614 (x0.95, was
-        // x1.055). A 45 s map with 400 notes x0.972 (was x1), with SF x0.95. Dev (26 Oct), from the 5% length cap: stars
-        // of the short maps x0.994, of the short low note ones x0.982; the rest and the top 1000 unchanged.
         // Notes: 1 - (1 - LowNoteRefMultiplier) x ln(LowNoteStart / notes) / ln(LowNoteStart / LowNoteRefNotes), at least
         // LowNoteMinMultiplier, under LowNoteStart color notes (LackMapCalculation.NoteCount; 0 = unknown: 1). LowNoteStart
         // 0 = off.
@@ -355,9 +332,10 @@
         public double LowNoteRefMultiplier { get; set; } = 0.95;
         public double LowNoteMinMultiplier { get; set; } = 0.95;
         // Length: 1 - (1 - ShortRefMultiplier) x ln(ShortStart / span) / ln(ShortStart / ShortRefSpan), at least
-        // ShortMinMultiplier, under ShortStart seconds (12 s: SF on an 18 s map, so the speeds stay apart above it). The span is the first to the last color note in real time (song time /
-        // the speed modifier's, LackMapCalculation.NoteSpan; 0 = unknown: 1), so FS and SF, shorter grinds, are nerfed more
-        // and SS less. 4% of ranked maps are under 75 s nomod (median 177 s), 6% with FS, 11% with SF. ShortStart 0 = off.
+        // ShortMinMultiplier, under ShortStart seconds (ShortRefSpan 12 s: SF on an 18 s map, so the speeds stay apart above
+        // it). The span is the first to the last color note in real time (song time / the speed modifier's,
+        // LackMapCalculation.NoteSpan; 0 = unknown: 1), so FS and SF, shorter grinds, are nerfed more and SS less.
+        // ShortStart 0 = off.
         public double ShortStart { get; set; } = 75;
         public double ShortRefSpan { get; set; } = 12;
         public double ShortRefMultiplier { get; set; } = 0.9;
@@ -383,10 +361,9 @@
 
         // Low note speed blend: under LowNoteStart color notes, a speed modifier's pass, tech and acc ratings keep (notes /
         // LowNoteStart)^2 of their difference to the nomod ones (RatingsController.BlendLowNoteSpeeds, RatingsRefresh.Refresh):
-        // speed makes these maps faster to grind, not harder, so it shouldn't raise their ratings (Quiet Water Easy's SF acc
-        // rating was 7.6% over its nomod one), and the ShortFactor then gives the faster modifiers less. With the square,
-        // 47 notes keep 17% (notes / LowNoteStart: 41%, and SF still paid more than nomod there). notes: color notes (0 =
-        // unknown: unchanged).
+        // speed makes these maps faster to grind, not harder, so it shouldn't raise their ratings, and the ShortFactor then
+        // gives the faster modifiers less. Squared so SF doesn't still pay more than nomod. notes: color notes (0 = unknown:
+        // unchanged).
         public double LowNoteSpeedBlend(double nomod, double modifier, int notes)
         {
             if (notes <= 0 || LowNoteStart <= 0 || notes >= LowNoteStart) return modifier;

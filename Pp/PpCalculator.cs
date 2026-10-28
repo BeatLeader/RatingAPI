@@ -27,7 +27,7 @@ namespace RatingAPI.Pp
                 return CurveValue(acc);
             }
 
-            // The first point at or below acc (the points go down from 100%): binary search, as the scan it replaced
+            // The first point at or below acc (the points go down from 100%): binary search
             int i = 0, hi = curve.Count;
             while (i < hi)
             {
