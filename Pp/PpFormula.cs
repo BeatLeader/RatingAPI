@@ -129,9 +129,16 @@ namespace RatingAPI.Pp
         // over 3% (Viking #162 +6.8%). Worth doesn't see a band-wide change (each map is compared with others of its stars),
         // so the acc reweighter doesn't undo it. x3 also took Powerful Normal to #5, but the best plays at 1-6 stars (813-842)
         // then paid more than any from 8 stars.
-        public double LowStarBonus { get; set; } = 0.0126742;
+        // -> 0.00382, power 1.36 -> 2.3: with the acc curve top compression and the per-map curve's 99%+ rows at A 0.99,
+        // Quiet Water Easy's 100% fell 604 -> 532 pp; back to 600 (its stars 1.41 -> 1.62). The power puts the bonus on the
+        // lowest stars (+41% at 1 star, +30% at 2, +21% at 3, +13% at 4, +7.5% at 5, +1.2% at 7; was +20%, +17%, +13%, +10%,
+        // +7.4%, +2.5%): 0.0239 at power 1.36 also got Quiet Water to 600,
+        // but took the 700 pp+ scores from 818 to 986 (2-8 stars x2-x4). Dev Acc, 28 Oct, no acc reweight, against Dev Acc
+        // before the curve change: 700 pp+ scores at 2-3 / 3-4 / 4-5 / 5-6 / 6-7 / 7-8 / 8-9 stars 7, 9, 22, 27, 37, 29, 40
+        // -> 8, 11, 21, 21, 28, 27, 37, total 818 -> 800 (734 -> 715 autoreweighted); top 1000 average 16442 -> 16451.
+        public double LowStarBonus { get; set; } = 0.00382;
         public double LowStarBonusEnd { get; set; } = 8.6454;
-        public double LowStarBonusPower { get; set; } = 1.36;
+        public double LowStarBonusPower { get; set; } = 2.3;
 
         public static PpFormula Current { get; set; } = new();
 
