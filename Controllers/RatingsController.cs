@@ -205,6 +205,7 @@ namespace RatingAPI.Controllers
                     }
                     results[name] = GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, timescale, njsMult);
                 }
+                UseNomodHighPass(results);
                 BlendLowNoteSpeeds(results);
             }
             _logger.LogWarning("Took " + sw.ElapsedMilliseconds);
@@ -238,6 +239,7 @@ namespace RatingAPI.Controllers
                 {
                     results[name] = GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, timescale);
                 }
+                UseNomodHighPass(results);
             }
             _logger.LogWarning("Took " + sw.ElapsedMilliseconds);
 
@@ -438,6 +440,23 @@ namespace RatingAPI.Controllers
             };
         }
         */
+
+        // Every speed modifier's acc rating again with the nomod pass rating in its high pass correction and buff
+        // (AccRating.EffectiveAcc), and its stars, when AccRating.SpeedHighPassFromNomod is on. Needs the nomod ratings
+        // ("none"); before BlendLowNoteSpeeds.
+        public static void UseNomodHighPass(Dictionary<string, RatingResult> results)
+        {
+            if (!AccRating.SpeedHighPassFromNomod || !results.TryGetValue("none", out var nomod)) return;
+            double nomodPass = nomod.LackMapCalculation.PassRating;
+            var ar = new AccRating();
+            foreach (var (name, result) in results)
+            {
+                if (name == "none" || !(result.PredictedAcc > 0)) continue;
+                var lack = result.LackMapCalculation;
+                result.AccRating = ar.GetRating(result.PredictedAcc, lack.PassRating, lack.TechRating, lack.HitDistance, lack.HardSwingRatio, nomodPass);
+                result.Stars = Pp.PpCalculator.ToStars((float)result.AccRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(result.PointList));
+            }
+        }
 
         // The low note speed blend (CurveSettings.LowNoteSpeedBlend) on every speed modifier's pass, tech and acc ratings, and
         // their stars again. Needs the nomod ratings ("none").

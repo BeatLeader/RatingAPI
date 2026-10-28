@@ -7,9 +7,10 @@
 
         // Lifted at low acc (+20% up to 80%, fading to 0 at 92%): maps players score low on were worth less for them than
         // their other maps. Stars (a 96% score) and acc ratings (the curve at the effective acc, 95%+) don't move.
+        // 100% at 7.2 (was 7.424): the last step was 1.64x the one before it, a slope jump of x1.33 at 99.9% in every curve.
         public static readonly (double x, double y)[] BaseTable =
         {
-                (1.0, 7.424),
+                (1.0, 7.2),
                 (0.999, 6.241),
                 (0.9975, 5.158),
                 (0.995, 4.010),
@@ -107,15 +108,15 @@
         }
 
         // Value of the per-map curve (GetCurve above) at acc, computed directly instead of from the sampled points.
-        // Used by the acc rating (AccRating.Curve).
-        public static double PerMapValue(double predictedAcc, double acc)
+        // Used by the acc rating (AccRating.Curve). forRating: with the rows' RatingC instead of C (see CurveRow.RatingC).
+        public static double PerMapValue(double predictedAcc, double acc, bool forRating = false)
         {
-            var curves = PerMapCurves(predictedAcc);
+            var curves = PerMapCurves(predictedAcc, forRating);
             return curves == null ? BaseValue(acc) : PerMapValue(curves.Value, acc);
         }
 
-        // The modified and default ModifiableCurve of a map, null when it gets the base curve
-        private static (ModifiableCurve modified, ModifiableCurve standard)? PerMapCurves(double predictedAcc)
+        // The modified and default ModifiableCurve of a map, null when it gets the base curve. forRating: see PerMapValue.
+        private static (ModifiableCurve modified, ModifiableCurve standard)? PerMapCurves(double predictedAcc, bool forRating = false)
         {
             var settings = CurveSettings.Current;
             if (!settings.Enabled || predictedAcc <= 0.6 || predictedAcc >= 0.9995)
@@ -128,7 +129,8 @@
                 return null;
             }
             double a = Math.Min(Math.Max(row.A, 0.951), 1.0);
-            return (new ModifiableCurve { A = a, C = row.C, K = row.K, W = row.W, K2 = row.K2, P2 = row.P2 }, new ModifiableCurve());
+            double c = forRating ? row.RatingC ?? row.C : row.C;
+            return (new ModifiableCurve { A = a, C = c, K = row.K, W = row.W, K2 = row.K2, P2 = row.P2 }, new ModifiableCurve());
         }
 
         // The base it scales is SmoothBaseValue: the linear table's slope jumps at every table point, which made per-map
@@ -280,6 +282,9 @@
         public double W { get; set; } = 0.6;
         public double K2 { get; set; } = 2.88;
         public double P2 { get; set; } = 2.46;
+        // The C the acc rating reads (AccRating.Curve, at the predicted acc), null: C. Lets a row flatten its curve above A
+        // for scores without raising the acc rating of maps predicted above A (curve^-0.8222 there).
+        public double? RatingC { get; set; }
 
         // A at 100% and the default shape: the base curve
         public bool IsDefault => A >= 0.9995 && K == 4.86 && W == 0.6 && K2 == 2.88 && P2 == 2.46;
@@ -292,6 +297,10 @@
     // 2. True acc (<2*) and acc maps (<5*) gave too much for tiny jumps around 99%: less steep there, hugging the base curve
     // while cutting the extreme tail. The 99.5% row keeps the 99% row from applying above 99%, which would cut the curve
     // at <2* maps' predicted acc far more.
+    // 3. The 99% and 99.5% rows' C (0: a straight line above 99%) flattens their curve's top, which PpFormula's acc top
+    // compression (x0.8 above 99% on every map) did before. Their RatingC keeps the acc rating on the old top (C -1.2):
+    // read at the predicted acc, the flatter top raised the acc rating of maps predicted above 99% by up to x1.10, and the
+    // easiest acc maps' 99.5%+ scores with it.
     public class CurveSettings
     {
         public bool Enabled { get; set; } = true;
@@ -305,8 +314,8 @@
             new CurveRow { PredictedAcc = 0.975, A = 0.985,   C = -1.80, K = 4.86, W = 0.60, K2 = 3.80, P2 = 2.15 },
             new CurveRow { PredictedAcc = 0.980, A = 0.985,   C = -1.40, K = 4.86, W = 0.60, K2 = 3.35, P2 = 2.30 },
             new CurveRow { PredictedAcc = 0.985, A = 0.985,   C = -1.20, K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46 },
-            new CurveRow { PredictedAcc = 0.990, A = 0.99,    C = -1.20, K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46 },
-            new CurveRow { PredictedAcc = 0.995, A = 0.99,    C = -1.20, K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46 },
+            new CurveRow { PredictedAcc = 0.990, A = 0.99,    C = 0.00,  K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46, RatingC = -1.20 },
+            new CurveRow { PredictedAcc = 0.995, A = 0.99,    C = 0.00,  K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46, RatingC = -1.20 },
         };
 
         // C never goes above 1 (the curve would go down)
@@ -329,8 +338,9 @@
         // 0 = off.
         public double LowNoteStart { get; set; } = 115;
         public double LowNoteRefNotes { get; set; } = 20;
-        public double LowNoteRefMultiplier { get; set; } = 0.95;
-        public double LowNoteMinMultiplier { get; set; } = 0.95;
+        // 0.9654: Quiet Water Easy (20 notes, 18 s) pays 600pp for a 100% (99%+ rows' C 0 and RatingC -1.2, base 100% at 7.2)
+        public double LowNoteRefMultiplier { get; set; } = 0.9654;
+        public double LowNoteMinMultiplier { get; set; } = 0.9654;
         // Length: 1 - (1 - ShortRefMultiplier) x ln(ShortStart / span) / ln(ShortStart / ShortRefSpan), at least
         // ShortMinMultiplier, under ShortStart seconds (ShortRefSpan 12 s: SF on an 18 s map, so the speeds stay apart above
         // it). The span is the first to the last color note in real time (song time / the speed modifier's,
@@ -375,7 +385,8 @@
         {
             var rows = Table.OrderBy(r => r.PredictedAcc).ToList();
             if (rows.Count == 0) return new CurveRow { PredictedAcc = predictedAcc };
-            CurveRow Clamp(CurveRow r) => new CurveRow { PredictedAcc = predictedAcc, A = r.A, C = Math.Min(r.C, MaxC), K = r.K, W = r.W, K2 = r.K2, P2 = r.P2 };
+            CurveRow Clamp(CurveRow r) => new CurveRow { PredictedAcc = predictedAcc, A = r.A, C = Math.Min(r.C, MaxC), K = r.K, W = r.W, K2 = r.K2, P2 = r.P2,
+                RatingC = Math.Min(r.RatingC ?? r.C, MaxC) };
             if (predictedAcc <= rows[0].PredictedAcc) return Clamp(rows[0]);
             for (int i = 1; i < rows.Count; i++)
             {
@@ -384,7 +395,8 @@
                     var p = rows[i - 1]; var n = rows[i];
                     double t = (predictedAcc - p.PredictedAcc) / (n.PredictedAcc - p.PredictedAcc);
                     double L(double x, double y) => x + t * (y - x);
-                    return Clamp(new CurveRow { A = L(p.A, n.A), C = L(p.C, n.C), K = L(p.K, n.K), W = L(p.W, n.W), K2 = L(p.K2, n.K2), P2 = L(p.P2, n.P2) });
+                    return Clamp(new CurveRow { A = L(p.A, n.A), C = L(p.C, n.C), K = L(p.K, n.K), W = L(p.W, n.W), K2 = L(p.K2, n.K2), P2 = L(p.P2, n.P2),
+                        RatingC = L(p.RatingC ?? p.C, n.RatingC ?? n.C) });
                 }
             }
             return Clamp(rows[rows.Count - 1]);

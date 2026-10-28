@@ -48,14 +48,24 @@
         public const double HIGH_PASS_BUFF_FULL = 14.5;
         public const double HIGH_PASS_BUFF = 0.0055;
 
+        // On: speed modifiers (SS / FS / SF) take the high pass correction and buff from the map's nomod pass rating (both were
+        // fitted on nomod scores; FS's ~1.2x pass puts 136 maps into the buff that their nomod pass doesn't reach, FS acc
+        // ratings up to x1.26 nomod's where x1.10 is typical). Off: from their own pass rating. Read by RatingsController
+        // (UseNomodHighPass), RatingsRefresh.Refresh and the balance tuner.
+        public static bool SpeedHighPassFromNomod { get; set; } = false;
+
         // The predicted acc the acc rating uses (see the corrections above). passRating: the pass rating; hitDistance:
-        // Ratings.HitDistance. 0 leaves that correction out.
-        public static double EffectiveAcc(double predictedAcc, double passRating = 0, double hitDistance = 0) =>
-            predictedAcc - HARD_MAP_SLOPE * Math.Max(0, HARD_MAP_KNEE - Math.Max(predictedAcc, HARD_MAP_FLOOR))
-            - HIT_DISTANCE_SLOPE * Math.Max(0, Math.Min(hitDistance, HIT_DISTANCE_CAP) - HIT_DISTANCE_KNEE)
-                * Math.Clamp((HIT_DISTANCE_NONE_ABOVE - predictedAcc) / (HIT_DISTANCE_NONE_ABOVE - HIT_DISTANCE_FULL_BELOW), 0, 1)
-            - HIGH_PASS_SLOPE * Math.Max(0, passRating - HIGH_PASS_KNEE)
-            - HIGH_PASS_BUFF * Math.Clamp((passRating - HIGH_PASS_BUFF_START) / (HIGH_PASS_BUFF_FULL - HIGH_PASS_BUFF_START), 0, 1);
+        // Ratings.HitDistance. 0 leaves that correction out. highPassRating: the pass rating of the high pass correction and
+        // buff (a speed modifier's: the nomod one; null: passRating).
+        public static double EffectiveAcc(double predictedAcc, double passRating = 0, double hitDistance = 0, double? highPassRating = null)
+        {
+            double highPass = highPassRating ?? passRating;
+            return predictedAcc - HARD_MAP_SLOPE * Math.Max(0, HARD_MAP_KNEE - Math.Max(predictedAcc, HARD_MAP_FLOOR))
+                - HIT_DISTANCE_SLOPE * Math.Max(0, Math.Min(hitDistance, HIT_DISTANCE_CAP) - HIT_DISTANCE_KNEE)
+                    * Math.Clamp((HIT_DISTANCE_NONE_ABOVE - predictedAcc) / (HIT_DISTANCE_NONE_ABOVE - HIT_DISTANCE_FULL_BELOW), 0, 1)
+                - HIGH_PASS_SLOPE * Math.Max(0, highPass - HIGH_PASS_KNEE)
+                - HIGH_PASS_BUFF * Math.Clamp((highPass - HIGH_PASS_BUFF_START) / (HIGH_PASS_BUFF_FULL - HIGH_PASS_BUFF_START), 0, 1);
+        }
 
         // Hard swing correction: maps whose hardest swings are scattered over the map (Analyzer Ratings.HardSwingRatio above 1)
         // were worth less than others of their stars, most on pass 11+ maps: the pass rating averages the hardest windows, so
@@ -74,12 +84,13 @@
                 ? 1 + Math.Min(HARD_SWING_SLOPE * Math.Max(0, (hardSwingRatio - 1) * passRating - HARD_SWING_KNEE), HARD_SWING_CAP)
                 : 1;
 
-        public double GetRating(double? predictedAcc, double? passRating, double? techRating, double hitDistance = 0, double hardSwingRatio = 0)
+        // highPassRating: see EffectiveAcc (a speed modifier's: the nomod pass rating)
+        public double GetRating(double? predictedAcc, double? passRating, double? techRating, double hitDistance = 0, double hardSwingRatio = 0, double? highPassRating = null)
         {
             double difficulty_to_acc;
             if (predictedAcc > 0)
             {
-                double effective = EffectiveAcc(predictedAcc ?? 0, passRating ?? 0, hitDistance);
+                double effective = EffectiveAcc(predictedAcc ?? 0, passRating ?? 0, hitDistance, highPassRating);
                 difficulty_to_acc = ACC_SCALE * Math.Pow(Curve(predictedAcc ?? 0, effective + ACC_OFFSET), -ACC_EXPONENT)
                     * HardSwingMultiplier(passRating ?? 0, hardSwingRatio);
             }
@@ -95,7 +106,8 @@
             return difficulty_to_acc;
         }
 
-        // The map's own per-map acc curve (ModifiableCurve, see Curve.GetCurve), picked by its predicted acc, at acc
-        public static float Curve(double predictedAcc, double acc) => (float)Controllers.Curve.PerMapValue(predictedAcc, acc);
+        // The map's own per-map acc curve (ModifiableCurve, see Curve.GetCurve), picked by its predicted acc, at acc; with the
+        // curve rows' RatingC (CurveRow.RatingC)
+        public static float Curve(double predictedAcc, double acc) => (float)Controllers.Curve.PerMapValue(predictedAcc, acc, forRating: true);
     }
 }

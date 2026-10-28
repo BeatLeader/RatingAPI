@@ -70,21 +70,6 @@ namespace RatingAPI.Pp
         public double TechTopKnee { get; set; } = 12;
         public double TechTopSlope { get; set; } = 0.33;
 
-        // Acc curve top compression: above AccTopKnee accuracy, the curve rises AccTopSlope as fast (curve(knee) + (curve(acc)
-        // - curve(knee)) x AccTopSlope, before the acc curve power). 1 = off. Trims 99%+ scores on low-star acc maps that
-        // the low star bonus overpaid. Not done in the per-map curves (CurveSettings.Table): the acc rating reads them at the
-        // predicted acc, and a lower curve there raises the acc rating (curve^-0.8222). Doesn't move stars or acc ratings.
-        // With it the acc reweighter doesn't run under 4 stars (AccReweighter.MinStars).
-        public double AccTopKnee { get; set; } = 0.99;
-        public double AccTopSlope { get; set; } = 0.8;
-
-        // The curve value with the acc top compression (curveAtKnee: the curve at AccTopKnee)
-        public float AccTop(float curveValue, float curveAtKnee)
-        {
-            if (AccTopSlope == 1 || !(curveValue > curveAtKnee)) return curveValue;
-            return curveAtKnee + (curveValue - curveAtKnee) * (float)AccTopSlope;
-        }
-
         public PpFormula Clone() => (PpFormula)MemberwiseClone();
 
         // Pass pp top compression: above PassTopKnee pass, each point counts PassTopSlope (1 = off). High-pass maps' pp is

@@ -68,9 +68,6 @@ namespace RatingAPI.Pp
         {
             var formula = PpFormula.Current;
             float curveValue = CurveValue(accuracy, curve);
-            // The acc top compression (PpFormula.AccTopKnee), then the acc curve power
-            if (formula.AccTopSlope != 1 && accuracy > formula.AccTopKnee)
-                curveValue = formula.AccTop(curveValue, CurveValue((float)formula.AccTopKnee, curve));
             if (power != 1) curveValue = formula.AccCurve(curveValue, starCurveValue, power);
             return (formula.PassPp(passRating), formula.AccPp(curveValue, accRating), formula.TechPp(accuracy, techRating));
         }
