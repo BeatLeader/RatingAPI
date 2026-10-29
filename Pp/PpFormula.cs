@@ -53,7 +53,7 @@ namespace RatingAPI.Pp
         public double StarScale { get; set; } = 1.1653;
         public double StarExponent { get; set; } = 1.17507;
         // Keeps the top 1000 players' average pp at prod's; retune when the formula changes it.
-        public double PpMultiplier { get; set; } = 1.0211;
+        public double PpMultiplier { get; set; } = 1.0199;
 
         // Low star bonus: maps under LowStarBonusEnd stars pay more. Top players farm the easiest maps to 99%+, but stars are
         // measured at 96%, so pp vs stars fell off steeply at low stars. Stars include the bonus (StarsFromPp), and its
@@ -63,7 +63,40 @@ namespace RatingAPI.Pp
         public double LowStarBonusEnd { get; set; } = 8.6454;
         public double LowStarBonusPower { get; set; } = 2.3;
 
+        // Mid star top bonus: 7-8 star maps pay top players less than on prod (matched scores ~1-3% under, their share of
+        // the top 1000's weighted pp 5.8% -> 3.7%). pp x (1 + MidStarTopBonus x bump(stars) x ramp(acc)): bump is 1 from
+        // MidStarTopFull to MidStarTopFullEnd stars, easing (smoothstep) to 0 at MidStarTopStart / MidStarTopEnd; ramp eases
+        // from 0 at MidStarTopAccStart to 1 at MidStarTopAccFull. The acc ratings aren't touched (a curve change near the
+        // predicted acc would cancel through them), and stars (read at 96%, where ramp is 0) don't move. Top players score
+        // 96.5-98% on these maps, players ranked 2000+ almost never above 96%. stars: those of the version played (a speed
+        // modifier's own), like the low star bonus. 0 = off.
+        public double MidStarTopBonus { get; set; } = 0.04;
+        public double MidStarTopStart { get; set; } = 6;
+        public double MidStarTopFull { get; set; } = 7;
+        public double MidStarTopFullEnd { get; set; } = 8;
+        public double MidStarTopEnd { get; set; } = 9.5;
+        public double MidStarTopAccStart { get; set; } = 0.96;
+        public double MidStarTopAccFull { get; set; } = 0.975;
+
         public static PpFormula Current { get; set; } = new();
+
+        public float MidStarTopMultiplier(float stars, float accuracy)
+        {
+            if (MidStarTopBonus == 0 || !(accuracy > MidStarTopAccStart)) return 1;
+            double bump = MidStarTopBump(stars);
+            if (bump == 0) return 1;
+            double ramp = Ease((accuracy - MidStarTopAccStart) / (MidStarTopAccFull - MidStarTopAccStart));
+            return 1 + (float)(MidStarTopBonus * bump * ramp);
+        }
+
+        private double MidStarTopBump(float stars)
+        {
+            if (!(stars > MidStarTopStart && stars < MidStarTopEnd)) return 0;
+            return stars < MidStarTopFull ? Ease((stars - MidStarTopStart) / (MidStarTopFull - MidStarTopStart))
+                : stars > MidStarTopFullEnd ? Ease((MidStarTopEnd - stars) / (MidStarTopEnd - MidStarTopFullEnd)) : 1;
+        }
+
+        private static double Ease(double t) { t = Math.Clamp(t, 0, 1); return t * t * (3 - 2 * t); }
 
         // Tech pp top compression: above TechTopKnee tech, each point counts TechTopSlope. 1 = off. Tech share was only
         // overpaid on the highest-tech maps (13+), so this trims them without touching tech 11-13.
@@ -152,6 +185,6 @@ namespace RatingAPI.Pp
         public float Scale(float pp) => (float)PpMultiplier * pp;
 
         public override string ToString() => FormattableString.Invariant(
-            $"pass {PassScale}*e^({PassInner}*p^(1/{PassExponent}))-{PassOffset} (x{PassTopSlope} above {PassTopKnee}), acc x{AccWeight}*a^{AccRatingPower}, tech e^({TechAccExponent}a)*{TechWeight}*t^{TechRatingPower} (x{TechTopSlope} above {TechTopKnee}), x{PpMultiplier}, stars {StarScale}*(pp/{StarDivisor})^{StarExponent}, low star bonus {LowStarBonus}*({LowStarBonusEnd}-stars)^{LowStarBonusPower}");
+            $"pass {PassScale}*e^({PassInner}*p^(1/{PassExponent}))-{PassOffset} (x{PassTopSlope} above {PassTopKnee}), acc x{AccWeight}*a^{AccRatingPower}, tech e^({TechAccExponent}a)*{TechWeight}*t^{TechRatingPower} (x{TechTopSlope} above {TechTopKnee}), x{PpMultiplier}, stars {StarScale}*(pp/{StarDivisor})^{StarExponent}, low star bonus {LowStarBonus}*({LowStarBonusEnd}-stars)^{LowStarBonusPower}, mid star top bonus {MidStarTopBonus} ({MidStarTopStart}-{MidStarTopFull}-{MidStarTopFullEnd}-{MidStarTopEnd} stars, {MidStarTopAccStart}-{MidStarTopAccFull} acc)");
     }
 }

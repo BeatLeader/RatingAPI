@@ -58,7 +58,8 @@
         //   still exponential) or fades (0 < C <= 1; 0 = straight line).
         // The parameters only act relative to the default ModifiableCurve: value = base table(x) * modified(x) / default(x)
         // (the table interpolated smoothly, SmoothBaseValue), so default parameters give exactly the base curve (the default
-        // ModifiableCurve itself is 3-6% above the table at 97-99.9%). Never above the base curve. Only map data is used.
+        // ModifiableCurve itself is 3-6% above the table at 97-99.9%). Above A, table / default is held at its value and
+        // slope at A, so the top follows A and C only (PerMapValue). Never above the base curve. Only map data is used.
         public List<Point> GetCurve(LackMapCalculation lackRatings, double predictedAcc)
         {
             var curves = PerMapCurves(predictedAcc);
@@ -135,12 +136,34 @@
 
         // The base it scales is SmoothBaseValue: the linear table's slope jumps at every table point, which made per-map
         // curves bumpy above ~98.5%. Same values at the table points (96% included), up to 1.34% lower between them.
+        // value = modified(x) x TableFactor(x), the table over the default ModifiableCurve. Above A, TableFactor is held at
+        // its value at A, continued with its slope there (TopTableFactor): the table's last steps (99.75%, 99.9%, 100%) are
+        // steeper than the default ModifiableCurve, so TableFactor sags to 0.930 at 99.7% and climbs back to 0.970 at 100%,
+        // which made every top (meant as a straight line for C 0, or a smooth taper) flatten up to ~99.75% and bend up to 100%.
         private static double PerMapValue((ModifiableCurve modified, ModifiableCurve standard) curves, double x)
         {
             double baseValue = SmoothBaseValue(x);
-            double reference = curves.standard.GetValue(x);
-            double value = reference > 0 ? baseValue * curves.modified.GetValue(x) / reference : baseValue;
+            double a = curves.modified.A;
+            double factor = a < 0.9995 && x > a ? TopTableFactor(curves.standard, a, x) : TableFactor(curves.standard, x);
+            double value = factor > 0 ? curves.modified.GetValue(x) * factor : baseValue;
             return Math.Min(baseValue, value);
+        }
+
+        // The table over the default ModifiableCurve at x (0 where the default curve is 0)
+        private static double TableFactor(ModifiableCurve standard, double x)
+        {
+            double reference = standard.GetValue(x);
+            return reference > 0 ? SmoothBaseValue(x) / reference : 0;
+        }
+
+        // TableFactor above A: its value at A plus its slope there (from just under A) times the distance to A, so the curve
+        // keeps the same value and slope at A
+        private static double TopTableFactor(ModifiableCurve standard, double a, double x)
+        {
+            const double h = 1e-5;
+            double atA = TableFactor(standard, a);
+            double slope = (atA - TableFactor(standard, a - h)) / h;
+            return atA + slope * (x - a);
         }
 
         public static double BaseValue(double acc)
@@ -301,6 +324,12 @@
     // compression (x0.8 above 99% on every map) did before. Their RatingC keeps the acc rating on the old top (C -1.2):
     // read at the predicted acc, the flatter top raised the acc rating of maps predicted above 99% by up to x1.10, and the
     // easiest acc maps' 99.5%+ scores with it.
+    // 4. The 0.975 and 0.980 rows (7-8 star maps and speed versions rated there) start their top at 98.3% instead of 98.5%,
+    // as a straight line (C 0): the mid star top bonus (PpFormula.MidStarTopBonus) pushed their 98.7%+ scores past 800pp
+    // (Let Mom Sleep Hard SF 834). The acc rating reads the same curve: unchanged up to ~98.1% predicted acc (it reads the
+    // curve at the predicted acc + ACC_OFFSET, under A), slightly higher (up to x1.003) at 98.2-98.8%, where it reads the
+    // new top. The 0.985 row's C -1.2 -> -0.6 (between its neighbours' 0): at -1.2, maps predicted 98.3-98.5% paid more for
+    // 99.75-100% (relative to a score at their predicted acc) than the harder 98% maps next to them.
     public class CurveSettings
     {
         public bool Enabled { get; set; } = true;
@@ -311,9 +340,9 @@
             new CurveRow { PredictedAcc = 0.960, A = 0.99,    C = -3.00, K = 4.30, W = 0.66, K2 = 4.80, P2 = 1.85 },
             new CurveRow { PredictedAcc = 0.965, A = 0.988,   C = -2.40, K = 4.50, W = 0.64, K2 = 4.50, P2 = 1.95 },
             new CurveRow { PredictedAcc = 0.970, A = 0.986,   C = -2.20, K = 4.70, W = 0.62, K2 = 4.20, P2 = 2.05 },
-            new CurveRow { PredictedAcc = 0.975, A = 0.985,   C = -1.80, K = 4.86, W = 0.60, K2 = 3.80, P2 = 2.15 },
-            new CurveRow { PredictedAcc = 0.980, A = 0.985,   C = -1.40, K = 4.86, W = 0.60, K2 = 3.35, P2 = 2.30 },
-            new CurveRow { PredictedAcc = 0.985, A = 0.985,   C = -1.20, K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46 },
+            new CurveRow { PredictedAcc = 0.975, A = 0.983,   C = 0.00,  K = 4.86, W = 0.60, K2 = 3.80, P2 = 2.15 },
+            new CurveRow { PredictedAcc = 0.980, A = 0.983,   C = 0.00,  K = 4.86, W = 0.60, K2 = 3.35, P2 = 2.30 },
+            new CurveRow { PredictedAcc = 0.985, A = 0.985,   C = -0.60, K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46 },
             new CurveRow { PredictedAcc = 0.990, A = 0.99,    C = 0.00,  K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46, RatingC = -1.20 },
             new CurveRow { PredictedAcc = 0.995, A = 0.99,    C = 0.00,  K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46, RatingC = -1.20 },
         };
