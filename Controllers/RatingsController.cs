@@ -518,13 +518,13 @@ namespace RatingAPI.Controllers
             var pointList = curve.GetCurve(lack, predictedAcc);
             RatingResult result = new()
             {
+                Stars = Pp.PpCalculator.ToStars((float)accRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(pointList)),
                 PredictedAcc = predictedAcc,
                 AccRating = accRating,
                 LackMapCalculation = lack,
-                PointList = pointList,
-                Stars = Pp.PpCalculator.ToStars((float)accRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(pointList)),
                 Length = length,
-                Njs = map.BeatMap?._noteJumpMovementSpeed ?? 0
+                Njs = map.BeatMap?._noteJumpMovementSpeed ?? 0,
+                PointList = pointList
             };
             return result;
         }
