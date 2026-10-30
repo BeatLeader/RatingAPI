@@ -12,15 +12,16 @@
         public const double ACC_EXPONENT = 0.8222;
         public const double ACC_OFFSET = 0.0019;
 
+        // The corrections' constants below are settable for experiments (portaBLe reacc); change their defaults here.
         // Hard map correction. Below HARD_MAP_KNEE predicted acc, top players fall further behind the Acc AI's prediction
         // the harder the map gets, beyond the smooth trend that holds from 96.8% to 99%.
         // The acc rating uses a predicted acc lowered by HARD_MAP_SLOPE times the distance below the knee, capped at
         // HARD_MAP_FLOOR (the edge of the fitted data). Map data only at rating time: the constants were fitted offline on
         // scores (Refresh/Tools/hard_map_offset_fit.py). The stored predicted acc and the per-map curves are unchanged.
         // HARD_MAP_SLOPE 0 = off.
-        public const double HARD_MAP_KNEE = 0.9675;
-        public const double HARD_MAP_SLOPE = 1.24;
-        public const double HARD_MAP_FLOOR = 0.95;
+        public static double HARD_MAP_KNEE { get; set; } = 0.9675;
+        public static double HARD_MAP_SLOPE { get; set; } = 1.24;
+        public static double HARD_MAP_FLOOR { get; set; } = 0.95;
 
         // Movement and high pass corrections. The Acc AI predicts the accuracy of the notes players cut (its targets leave
         // misses and bad cuts out), and where the hands travel far, or the pass is very high, players lose more to misses and
@@ -31,22 +32,28 @@
         // the effective acc on easier maps (steeper curve), so applied everywhere it overpaid easy maps with a lot of
         // movement. Hit distance is capped at 0.8 m, where the shortfall stops growing (extreme spacing got too much).
         // No tech term: tech pp already pays for the acc players lose on tech maps.
-        public const double HIT_DISTANCE_KNEE = 0.62;
-        public const double HIT_DISTANCE_SLOPE = 0.030;
-        public const double HIT_DISTANCE_CAP = 0.80;
-        public const double HIT_DISTANCE_FULL_BELOW = 0.97;
-        public const double HIT_DISTANCE_NONE_ABOVE = 0.975;
-        public const double HIGH_PASS_KNEE = 14.52;
-        public const double HIGH_PASS_SLOPE = 0.00214;
+        public static double HIT_DISTANCE_KNEE { get; set; } = 0.62;
+        public static double HIT_DISTANCE_SLOPE { get; set; } = 0.030;
+        public static double HIT_DISTANCE_CAP { get; set; } = 0.80;
+        public static double HIT_DISTANCE_FULL_BELOW { get; set; } = 0.97;
+        public static double HIT_DISTANCE_NONE_ABOVE { get; set; } = 0.975;
+        // Share of the hit distance correction kept above HIT_DISTANCE_NONE_ABOVE (0: phased out entirely). 0.2: on the P75
+        // worth, easy maps (97.5%+) over 0.7 m were 1.1% under the others with none (-0.0111 -> -0.0009 with 0.2; 0.4 and 0.8
+        // overshot to +0.009 / +0.028)
+        public static double HIT_DISTANCE_EASY_SHARE { get; set; } = 0.2;
+        public static double HIGH_PASS_KNEE { get; set; } = 14.52;
+        public static double HIGH_PASS_SLOPE { get; set; } = 0.00214;
 
         // Very high pass buff, on top of the high pass correction: HIGH_PASS_BUFF less effective acc from HIGH_PASS_BUFF_FULL
         // pass, ramped in linearly from HIGH_PASS_BUFF_START (no step at the threshold; flat above, so the 17 pass maps don't
         // gain more than the 14.5 ones). Each score's pp relative to the player's top pp was ~4% under maps of the same stars
         // on pass 14+ maps at every rank range (weighted worth hid it); their best scores sit under the predicted acc where
-        // other maps' are over. HIGH_PASS_BUFF 0 = off.
-        public const double HIGH_PASS_BUFF_START = 13.5;
-        public const double HIGH_PASS_BUFF_FULL = 14.5;
-        public const double HIGH_PASS_BUFF = 0.0055;
+        // other maps' are over. HIGH_PASS_BUFF 0 = off. 0.0025 (was 0.0055): on the P75 worth pass 14+ maps were 1.4-2.3%
+        // over others of their stars with 0.0055 (0.003: +0.2-0.9%, 0.001 overshot to -0.7-1.1%).
+        public static double HIGH_PASS_BUFF_START { get; set; } = 13.5;
+        public static double HIGH_PASS_BUFF_FULL { get; set; } = 14.5;
+        // 0.001 with the rotation^1.5 / soft capped strain tech and its tech refit (pass 14.5+ +1.8-1.9% over with 0.0025, +0.9-1.0%)
+        public static double HIGH_PASS_BUFF { get; set; } = 0.001;
 
         // On: speed modifiers (SS / FS / SF) take the high pass correction and buff from the map's nomod pass rating (both were
         // fitted on nomod scores; FS's ~1.2x pass puts 136 maps into the buff that their nomod pass doesn't reach, FS acc
@@ -62,7 +69,7 @@
             double highPass = highPassRating ?? passRating;
             return predictedAcc - HARD_MAP_SLOPE * Math.Max(0, HARD_MAP_KNEE - Math.Max(predictedAcc, HARD_MAP_FLOOR))
                 - HIT_DISTANCE_SLOPE * Math.Max(0, Math.Min(hitDistance, HIT_DISTANCE_CAP) - HIT_DISTANCE_KNEE)
-                    * Math.Clamp((HIT_DISTANCE_NONE_ABOVE - predictedAcc) / (HIT_DISTANCE_NONE_ABOVE - HIT_DISTANCE_FULL_BELOW), 0, 1)
+                    * Math.Max(HIT_DISTANCE_EASY_SHARE, Math.Clamp((HIT_DISTANCE_NONE_ABOVE - predictedAcc) / (HIT_DISTANCE_NONE_ABOVE - HIT_DISTANCE_FULL_BELOW), 0, 1))
                 - HIGH_PASS_SLOPE * Math.Max(0, highPass - HIGH_PASS_KNEE)
                 - HIGH_PASS_BUFF * Math.Clamp((highPass - HIGH_PASS_BUFF_START) / (HIGH_PASS_BUFF_FULL - HIGH_PASS_BUFF_START), 0, 1);
         }
@@ -73,10 +80,13 @@
         // them don't count either. The acc rating is multiplied by 1 + HARD_SWING_SLOPE x the excess of (ratio - 1) x pass
         // over HARD_SWING_KNEE, up to HARD_SWING_CAP. A multiplier, not a lower effective acc: the same acc pp change at
         // every predicted acc (the curve is much steeper on easy maps). A steeper slope over-concentrates top plays on the
-        // raised maps. One hand maps (ratio 0) aren't changed. HARD_SWING_SLOPE 0 = off.
-        public const double HARD_SWING_KNEE = 2.0;
-        public const double HARD_SWING_SLOPE = 0.02;
-        public const double HARD_SWING_CAP = 0.12;
+        // raised maps. One hand maps (ratio 0) aren't changed. HARD_SWING_SLOPE 0 = off. HARD_SWING_KNEE 1 (was 2): on the P75
+        // worth the maps just past the knee were still 0.3-0.7% under (pass 9+: corrected -0.0073 against +0.0052 without); with
+        // 1 and the lower TechAccExponent both are about 0, and the 700pp+ scores spread over more maps (447 -> 484, at most 26
+        // -> 15 on one map). A slope of 0.03 instead left the maps just past the knee under.
+        public static double HARD_SWING_KNEE { get; set; } = 1.0;
+        public static double HARD_SWING_SLOPE { get; set; } = 0.02;
+        public static double HARD_SWING_CAP { get; set; } = 0.12;
 
         // The hard swing correction's multiplier of the acc rating. hardSwingRatio: Ratings.HardSwingRatio (0: none)
         public static double HardSwingMultiplier(double passRating, double hardSwingRatio) =>

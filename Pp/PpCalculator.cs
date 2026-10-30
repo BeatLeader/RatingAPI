@@ -1,4 +1,4 @@
-using RatingAPI.Controllers;
+﻿using RatingAPI.Controllers;
 using System.Numerics;
 
 namespace RatingAPI.Pp
@@ -132,7 +132,10 @@ namespace RatingAPI.Pp
                 var prepared = speedRatings ?? ratings;
                 var score = prepared.Ratings;
                 float scoreStars = prepared.Stars;
-                (passPP, accPP, techPP) = GetPp(accuracy, score.AccRating * mp, score.PassRating * mp, score.TechRating * mp, score.Curve, formula.CurvePowerAt(scoreStars), prepared.StarCurveValue);
+                // The tech rating is shown compressed at the top (Analyzer Ratings.CompressTech): the multiplier scales the uncompressed one
+                float scoreTech = (float)global::beatleader_analyzer.BeatmapScanner.Data.Ratings.CompressTech(
+                    global::beatleader_analyzer.BeatmapScanner.Data.Ratings.UncompressTech(score.TechRating) * mp);
+                (passPP, accPP, techPP) = GetPp(accuracy, score.AccRating * mp, score.PassRating * mp, scoreTech, score.Curve, formula.CurvePowerAt(scoreStars), prepared.StarCurveValue);
                 fullPP = Scale(passPP + accPP + techPP) * formula.LowStarMultiplier(scoreStars) * formula.MidStarTopMultiplier(scoreStars, accuracy);
                 if (passPP + accPP + techPP > 0) {
                     increase = fullPP / (passPP + accPP + techPP);

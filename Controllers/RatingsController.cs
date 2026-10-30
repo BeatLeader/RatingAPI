@@ -195,15 +195,23 @@ namespace RatingAPI.Controllers
             if (mapset != null)
             {
                 if (map == null) return results;
+                // The speed modifiers' NJS share depends on the nomod stars (DataProcessing.NjsSpeedShare), so nomod is
+                // rated first, even when only speed modifiers are asked for
+                var nomod = GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, 1);
                 foreach ((var name, var timescale) in modifiers)
                 {
                     if (only != null && !only.Contains(name)) continue;
+                    if (name == "none")
+                    {
+                        results[name] = nomod;
+                        continue;
+                    }
                     var njsMult = 1.0;
                     if (name == "BFS" || name == "BSF")
                     {
                         njsMult = ((timescale - 1) / 2 + 1) / timescale;
                     }
-                    results[name] = GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, timescale, njsMult);
+                    results[name] = GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, timescale, njsMult, nomod.Stars);
                 }
                 UseNomodHighPass(results);
                 BlendLowNoteSpeeds(results);
@@ -235,9 +243,10 @@ namespace RatingAPI.Controllers
                 var map = mapset.Difficulties.FirstOrDefault(d => d.Characteristic == mode && d.Difficulty == difficulty);
                 if (map == null) return results;
 
+                var nomod = GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, 1);
                 foreach ((var name, var timescale) in modifiers)
                 {
-                    results[name] = GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, timescale);
+                    results[name] = name == "none" ? nomod : GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, timescale, 1, nomod.Stars);
                 }
                 UseNomodHighPass(results);
             }
@@ -484,7 +493,8 @@ namespace RatingAPI.Controllers
             return (mapdata.Notes.Max(n => n.Seconds) - mapdata.Notes.Min(n => n.Seconds)) / timescale;
         }
 
-        public RatingResult GetBLRatings(DifficultySet map, string characteristic, string difficulty, double bpm, double timescale, double njsMult = 1)
+        // nomodStars: the map's nomod stars, for a speed modifier's NJS share (DataProcessing.NjsSpeedShare); 0 for nomod
+        public RatingResult GetBLRatings(DifficultySet map, string characteristic, string difficulty, double bpm, double timescale, double njsMult = 1, double nomodStars = 0)
         {
             var mapdata = CustomModeDataMapping(characteristic, map.Data);
             var ratings = analyzer.GetRating(mapdata, characteristic, difficulty, (float)bpm, (float)timescale, (float)njsMult);
@@ -510,7 +520,7 @@ namespace RatingAPI.Controllers
             var length = end - start;
             if (start == 9999 || end == 0) length = 0;
 
-            var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult);
+            var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult, null, nomodStars);
             AccRating ar = new();
             var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating, ratings.HitDistance, ratings.HardSwingRatio);
             Curve curve = new();

@@ -114,8 +114,27 @@ namespace RatingAPI.Controllers
                     .ToList();
         }
 
-        // Share of the in-game NJS change the model sees (see PreprocessMapNotes)
+        // Share of the in-game NJS change the model sees (see PreprocessMapNotes), by the map's nomod stars: 10% at the
+        // lowest rated map (Quiet Water Easy, 1.9 stars) and under, up to 75% at 5 stars and over, exponentially
+        // (NJS_SPEED_SHARE_CURVE): the nerf holds through the low-mid stars and fades near 5 (15% at 2.5, 21% at 3, 39%
+        // at 4). Speed modifiers paid too much on low star maps, where the NJS is most of what they change.
         public const double NJS_SPEED_SHARE = 0.75;
+        public const double NJS_SPEED_SHARE_LOW = 0.10;
+        public const double NJS_SPEED_SHARE_LOW_STARS = 1.9;
+        public const double NJS_SPEED_SHARE_FULL_STARS = 5;
+        // (e^(k x) - 1) / (e^k - 1) of the way, x linear from LOW_STARS to FULL_STARS; 0 would be linear, higher holds longer
+        public const double NJS_SPEED_SHARE_CURVE = 2;
+
+        // nomodStars 0 (unknown): NJS_SPEED_SHARE. The nomod NJS doesn't depend on the share (timeScale and njsMult 1),
+        // so the nomod stars are rated first and given to the speed modifiers (RatingsController.Get).
+        public static double NjsSpeedShare(double nomodStars)
+        {
+            if (!(nomodStars > 0)) return NJS_SPEED_SHARE;
+            double x = Math.Clamp((nomodStars - NJS_SPEED_SHARE_LOW_STARS) / (NJS_SPEED_SHARE_FULL_STARS - NJS_SPEED_SHARE_LOW_STARS), 0, 1);
+            double k = NJS_SPEED_SHARE_CURVE;
+            double t = k > 0 ? (Math.Exp(k * x) - 1) / (Math.Exp(k) - 1) : x;
+            return NJS_SPEED_SHARE_LOW + (NJS_SPEED_SHARE - NJS_SPEED_SHARE_LOW) * t;
+        }
 
         public static List<double> PreprocessNote(double delta, double deltaOther, MapNote note, double njs, double timeScale)
         {
@@ -176,13 +195,14 @@ namespace RatingAPI.Controllers
             return response;
         }
 
-        public static Tuple<List<double[]>, List<double>> PreprocessMapNotes(List<MapNote> mapNotes, double timeScale, double njsMult = 1)
+        public static Tuple<List<double[]>, List<double>> PreprocessMapNotes(List<MapNote> mapNotes, double timeScale, double njsMult = 1, double nomodStars = 0)
         {
             List<double[]> notes = new();
             List<double> noteTimes = new();
 
             double prevZeroNoteTime = 0;
             double prevOneNoteTime = 0;
+            double njsShare = NjsSpeedShare(nomodStars);
 
             foreach (var note in mapNotes)
             {
@@ -190,8 +210,8 @@ namespace RatingAPI.Controllers
                 // The model sees only part of the in-game NJS change (speed, times njsMult for the half-NJS BFS / BSF):
                 // 75% (SFS x1.375, FS x1.15, SS x0.8875, BSF x1.1875, BFS x1.075). The full change predicted SFS acc too
                 // low and none at all underpaid SFS scores; 75% keeps speed modifier scores in line with no-mod ones
-                // (Refresh/Tools/modifier_check.py).
-                double njs = note.Njs * (1 + NJS_SPEED_SHARE * (njsMult * timeScale - 1));
+                // (Refresh/Tools/modifier_check.py). Less on low star maps (NjsSpeedShare): 10% at 1.9 stars, SFS x1.05.
+                double njs = note.Njs * (1 + njsShare * (njsMult * timeScale - 1));
 
                 double deltaToZero = noteTime - prevZeroNoteTime;
                 double deltaToOne = noteTime - prevOneNoteTime;
@@ -254,7 +274,7 @@ namespace RatingAPI.Controllers
             return (mapNotes, freePoints);
         }
 
-        public (List<List<double[]>> segments, List<double> noteTimes, int freePoints) PreprocessMap(DifficultyV3 mapdata, double bpm, double timescale, double njsMult = 1, List<Note> notesToIgnore = null)
+        public (List<List<double[]>> segments, List<double> noteTimes, int freePoints) PreprocessMap(DifficultyV3 mapdata, double bpm, double timescale, double njsMult = 1, List<Note> notesToIgnore = null, double nomodStars = 0)
         {
             var emptyResponse = (new List<List<double[]>>(), new List<double>(), 0);
             var (mapNotes, freePoints) = GetMapData(mapdata, bpm, notesToIgnore);
@@ -263,7 +283,7 @@ namespace RatingAPI.Controllers
                 return emptyResponse;
             }
 
-            var (notes, noteTimes) = PreprocessMapNotes(mapNotes, timescale, njsMult);
+            var (notes, noteTimes) = PreprocessMapNotes(mapNotes, timescale, njsMult, nomodStars);
             List<List<double[]>> segments = CreateSegments(notes);
             return (segments, noteTimes, freePoints);
         }

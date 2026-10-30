@@ -1,4 +1,4 @@
-namespace RatingAPI.Pp
+﻿namespace RatingAPI.Pp
 {
     // The pp formula's parameters (used by PpCalculator.GetPp, ToStars, ScorePp). PpFormula.Current is what PpCalculator
     // uses; portaBLe's formula sweeps (BalanceTuner.RunPpFormula) swap it temporarily to try other values.
@@ -45,15 +45,19 @@ namespace RatingAPI.Pp
         // Tuned with BalanceTuner so tech-heavy maps pay the same as others of their stars (tech share slope near 0).
         public double TechWeight { get; set; } = 0.1612;
         public double TechRatingPower { get; set; } = 1.2477;
-        public double TechAccExponent { get; set; } = 3.5;
+        // 3.27 (was 3.5): on the P75 worth (each player's better efforts), tech 9-13 maps were 1.3-1.6% over others of their
+        // stars and tech pp grew too fast with acc; 3.27 halves it (tech share slope +0.0062 -> about 0), as TechWeight 0.131
+        // would, with a slightly lower worth spread. 3.2 with the rotation^1.5 / soft capped strain tech (with TechTopKnee 9).
+        public double TechAccExponent { get; set; } = 3.2;
         // Stars and players' pp on prod's scale. StarScale / StarExponent: fitted on the quantiles of prod's ranked stars
         // (pp at 96% is steeper at the top than prod's stars). StarScale includes x0.9606 so Dev's star distribution matches
         // prod's; the star thresholds pp reads (curve power ramps, LowStarBonusEnd) are scaled with it so pp is unchanged.
         public double StarDivisor { get; set; } = 83.6925;
         public double StarScale { get; set; } = 1.1653;
         public double StarExponent { get; set; } = 1.17507;
-        // Keeps the top 1000 players' average pp at prod's; retune when the formula changes it.
-        public double PpMultiplier { get; set; } = 1.0199;
+        // Keeps the top 1000 players' average pp at prod's; retune when the formula changes it. 1.0299 (was 1.0199): the tech
+        // refit (TechTopKnee 9, TechAccExponent 3.2) lowered players' pp about 1%.
+        public double PpMultiplier { get; set; } = 1.0299;
 
         // Low star bonus: maps under LowStarBonusEnd stars pay more. Top players farm the easiest maps to 99%+, but stars are
         // measured at 96%, so pp vs stars fell off steeply at low stars. Stars include the bonus (StarsFromPp), and its
@@ -99,8 +103,10 @@ namespace RatingAPI.Pp
         private static double Ease(double t) { t = Math.Clamp(t, 0, 1); return t * t * (3 - 2 * t); }
 
         // Tech pp top compression: above TechTopKnee tech, each point counts TechTopSlope. 1 = off. Tech share was only
-        // overpaid on the highest-tech maps (13+), so this trims them without touching tech 11-13.
-        public double TechTopKnee { get; set; } = 12;
+        // overpaid on the highest-tech maps (13+), so this trims them without touching tech 11-13. 9 (was 12) with the rotation^1.5
+        // / soft capped strain tech, whose tech 9-14 maps were 1.2-2.2% over others of their stars on the P75 worth (0.2-0.9%
+        // with 9 and TechAccExponent 3.2; the worth spread 0.0298 -> 0.0295).
+        public double TechTopKnee { get; set; } = 9;
         public double TechTopSlope { get; set; } = 0.33;
 
         public PpFormula Clone() => (PpFormula)MemberwiseClone();
@@ -146,7 +152,8 @@ namespace RatingAPI.Pp
         public float TechPp(float accuracy, float techRating)
         {
             if (!(techRating > 0)) return 0;
-            float tech = techRating;
+            // The Analyzer's top compression of the rating undone first (display only), then the pp one
+            float tech = (float)global::beatleader_analyzer.BeatmapScanner.Data.Ratings.UncompressTech(techRating);
             if (tech > TechTopKnee) tech = (float)(TechTopKnee + (tech - TechTopKnee) * TechTopSlope);
             return MathF.Exp((float)TechAccExponent * accuracy) * (float)TechWeight * MathF.Pow(tech, (float)TechRatingPower);
         }
