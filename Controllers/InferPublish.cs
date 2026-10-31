@@ -223,9 +223,9 @@ namespace RatingAPI.Controllers
             return listOutputs;
         }
 
-        public (List<float>, List<double>, int) PredictHitsForMap(DifficultyV3 mapdata, double bpm, double timescale = 1, double njsMult = 1, List<Note> notesToIgnore = null, double nomodStars = 0)
+        public (List<float>, List<double>, int) PredictHitsForMap(DifficultyV3 mapdata, double bpm, double timescale = 1, double njsMult = 1, List<Note> notesToIgnore = null)
         {
-            var (segments, noteTimes, freePoints) = dataProcessing.PreprocessMap(mapdata, bpm, timescale, njsMult, notesToIgnore, nomodStars);
+            var (segments, noteTimes, freePoints) = dataProcessing.PreprocessMap(mapdata, bpm, timescale, njsMult, notesToIgnore);
             if (segments.Count == 0)
             {
                 return (new List<float>(), new List<double>(), freePoints);
@@ -619,9 +619,9 @@ namespace RatingAPI.Controllers
             return GetAccForMultiplierScale(multiplier);
         }
 
-        public double GetAIAcc(DifficultyV3 mapdata, double bpm, double timescale, double njsMult = 1, List<Note> notesToIgnore = null, double nomodStars = 0)
+        public double GetAIAcc(DifficultyV3 mapdata, double bpm, double timescale, double njsMult = 1, List<Note> notesToIgnore = null)
         {
-            var (accs, noteTimes, freePoints) = PredictHitsForMap(mapdata, bpm, timescale, njsMult, notesToIgnore, nomodStars);
+            var (accs, noteTimes, freePoints) = PredictHitsForMap(mapdata, bpm, timescale, njsMult, notesToIgnore);
             double AIacc = GetMapAccForHits(accs, freePoints);
             double adjustedAIacc = ScaleFarmability(AIacc, accs.Count, ((noteTimes.Last() - noteTimes.First() + 4) / timescale) + 2);
             AIacc = adjustedAIacc;

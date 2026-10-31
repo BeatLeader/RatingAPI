@@ -195,26 +195,19 @@ namespace RatingAPI.Controllers
             if (mapset != null)
             {
                 if (map == null) return results;
-                // The speed modifiers' NJS share depends on the nomod stars (DataProcessing.NjsSpeedShare), so nomod is
-                // rated first, even when only speed modifiers are asked for
-                var nomod = GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, 1);
                 foreach ((var name, var timescale) in modifiers)
                 {
                     if (only != null && !only.Contains(name)) continue;
-                    if (name == "none")
-                    {
-                        results[name] = nomod;
-                        continue;
-                    }
                     var njsMult = 1.0;
                     if (name == "BFS" || name == "BSF")
                     {
                         njsMult = ((timescale - 1) / 2 + 1) / timescale;
                     }
-                    results[name] = GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, timescale, njsMult, nomod.Stars);
+                    results[name] = GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, timescale, njsMult);
                 }
                 UseNomodHighPass(results);
                 BlendLowNoteSpeeds(results);
+                BlendLowStarSpeeds(results);
             }
             _logger.LogWarning("Took " + sw.ElapsedMilliseconds);
 
@@ -243,12 +236,12 @@ namespace RatingAPI.Controllers
                 var map = mapset.Difficulties.FirstOrDefault(d => d.Characteristic == mode && d.Difficulty == difficulty);
                 if (map == null) return results;
 
-                var nomod = GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, 1);
                 foreach ((var name, var timescale) in modifiers)
                 {
-                    results[name] = name == "none" ? nomod : GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, timescale, 1, nomod.Stars);
+                    results[name] = GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, timescale);
                 }
                 UseNomodHighPass(results);
+                BlendLowStarSpeeds(results);
             }
             _logger.LogWarning("Took " + sw.ElapsedMilliseconds);
 
@@ -486,6 +479,46 @@ namespace RatingAPI.Controllers
             }
         }
 
+        // Low star speed blend: on low and mid star maps, the speed-up modifiers' (FS, SFS, BFS, BSF) predicted acc, pass and
+        // tech are blended toward nomod's, and their acc rating, curve and stars computed again from them, so they pay less
+        // at every accuracy. Top players beat nomod scores with speed modifiers there: the top 300 score 0.5% higher with FS
+        // than without on 2-3.5 star maps, and on Burn Expert+ (6.5 stars) an FS 98.68% paid 42pp more than a nomod 98.82%.
+        // Share of the speed modifier's difference from nomod kept, by the map's nomod stars: a sigmoid,
+        //   1 / (1 + e^-((stars - LowStarSpeedMidStars) / LowStarSpeedWidth))
+        // close to 0 on the lowest maps (the strongest nerf: 2% at 2 stars with the defaults), half at LowStarSpeedMidStars,
+        // then nearing all of it without ever getting there (95% at 9 stars, 99.8% at 12). LowStarSpeedWidth: stars per
+        // e-fold, smaller = sharper flip. Settable for experiments (portaBLe rerate Speed.LowStarSpeedMidStars=7); change the
+        // defaults here.
+        public static double LowStarSpeedMidStars { get; set; } = 6;
+        public static double LowStarSpeedWidth { get; set; } = 1;
+
+        // The share of a speed modifier's difference from nomod kept on a map with these nomod stars
+        public static double LowStarSpeedShare(double nomodStars) =>
+            1 / (1 + Math.Exp(-(nomodStars - LowStarSpeedMidStars) / LowStarSpeedWidth));
+
+        // The low star speed blend on every speed-up modifier. Needs the nomod ratings ("none"); after BlendLowNoteSpeeds.
+        public static void BlendLowStarSpeeds(Dictionary<string, RatingResult> results)
+        {
+            if (!results.TryGetValue("none", out var nomod) || !(nomod.PredictedAcc > 0)) return;
+            double share = LowStarSpeedShare(nomod.Stars);
+            if (share >= 1) return;
+            var ar = new AccRating();
+            var curve = new Curve();
+            var nomodLack = nomod.LackMapCalculation;
+            foreach (var (name, result) in results)
+            {
+                if (name is not ("FS" or "SFS" or "BFS" or "BSF") || !(result.PredictedAcc > 0)) continue;
+                var lack = result.LackMapCalculation;
+                result.PredictedAcc = nomod.PredictedAcc + share * (result.PredictedAcc - nomod.PredictedAcc);
+                lack.PassRating = nomodLack.PassRating + share * (lack.PassRating - nomodLack.PassRating);
+                lack.TechRating = nomodLack.TechRating + share * (lack.TechRating - nomodLack.TechRating);
+                result.AccRating = ar.GetRating(result.PredictedAcc, lack.PassRating, lack.TechRating, lack.HitDistance, lack.HardSwingRatio,
+                    AccRating.SpeedHighPassFromNomod ? nomodLack.PassRating : null);
+                result.PointList = curve.GetCurve(lack, result.PredictedAcc);
+                result.Stars = Pp.PpCalculator.ToStars((float)result.AccRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(result.PointList));
+            }
+        }
+
         // First to last color note of a difficulty in real time: song seconds / timescale (LackMapCalculation.NoteSpan)
         public static double NoteSpan(DifficultyV3 mapdata, double timescale = 1)
         {
@@ -493,8 +526,7 @@ namespace RatingAPI.Controllers
             return (mapdata.Notes.Max(n => n.Seconds) - mapdata.Notes.Min(n => n.Seconds)) / timescale;
         }
 
-        // nomodStars: the map's nomod stars, for a speed modifier's NJS share (DataProcessing.NjsSpeedShare); 0 for nomod
-        public RatingResult GetBLRatings(DifficultySet map, string characteristic, string difficulty, double bpm, double timescale, double njsMult = 1, double nomodStars = 0)
+        public RatingResult GetBLRatings(DifficultySet map, string characteristic, string difficulty, double bpm, double timescale, double njsMult = 1)
         {
             var mapdata = CustomModeDataMapping(characteristic, map.Data);
             var ratings = analyzer.GetRating(mapdata, characteristic, difficulty, (float)bpm, (float)timescale, (float)njsMult);
@@ -520,7 +552,7 @@ namespace RatingAPI.Controllers
             var length = end - start;
             if (start == 9999 || end == 0) length = 0;
 
-            var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult, null, nomodStars);
+            var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult);
             AccRating ar = new();
             var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating, ratings.HitDistance, ratings.HardSwingRatio);
             Curve curve = new();

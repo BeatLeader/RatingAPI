@@ -8,11 +8,11 @@
         // Lifted at low acc (+20% up to 80%, fading to 0 at 92%): maps players score low on were worth less for them than
         // their other maps. Stars (a 96% score) and acc ratings (the curve at the effective acc, 95%+) don't move.
         // 100% at 7.2 (was 7.424): the last step was 1.64x the one before it, a slope jump of x1.33 at 99.9% in every curve.
-        // Tried ("Dev Acc Steeper 90-95" DBs): 90-95% steeper, with a rising growth per 1% acc (4.5, 5.8, 7.0, 7.6,
-        // 8.0%: up to 95-95.5%'s 8.0%) instead of the jump from 4.1% to 6.6% at 92% where the lift ended; 95% stays at 1,
-        // everything under 90% x0.966 (the lift's shape kept). Stars and acc ratings don't move; top 1000 players' pp -0.2%.
-        //   (0.94, 0.926), (0.93, 0.861), (0.92, 0.804), (0.91, 0.760), (0.9, 0.727), (0.875, 0.675), (0.85, 0.627),
-        //   (0.825, 0.584), (0.8, 0.549), (0.75, 0.469), (0.7, 0.400), (0.65, 0.343), (0.6, 0.297)
+        // 90-95% steeper ("Dev Acc Steeper 90-95" DBs), with a rising growth per 1% acc (4.5, 5.8, 7.0, 7.6, 8.0%: up to
+        // 95-95.5%'s 8.0%) instead of the jump from 4.1% to 6.6% at 92% where the lift ended; 95% stays at 1, everything
+        // under 90% x0.966 (the lift's shape kept). Stars and acc ratings don't move; top 1000 players' pp -0.2%. Before:
+        //   (0.94, 0.931), (0.93, 0.867), (0.92, 0.813), (0.91, 0.781), (0.9, 0.753), (0.875, 0.699), (0.85, 0.649),
+        //   (0.825, 0.605), (0.8, 0.568), (0.75, 0.485), (0.7, 0.414), (0.65, 0.355), (0.6, 0.307)
         public static readonly (double x, double y)[] BaseTable =
         {
                 (1.0, 7.2),
@@ -33,19 +33,19 @@
                 (0.96, 1.094),
                 (0.955, 1.039),
                 (0.95, 1.000),
-                (0.94, 0.931),
-                (0.93, 0.867),
-                (0.92, 0.813),
-                (0.91, 0.781),
-                (0.9, 0.753),
-                (0.875, 0.699),
-                (0.85, 0.649),
-                (0.825, 0.605),
-                (0.8, 0.568),
-                (0.75, 0.485),
-                (0.7, 0.414),
-                (0.65, 0.355),
-                (0.6, 0.307),
+                (0.94, 0.926),
+                (0.93, 0.861),
+                (0.92, 0.804),
+                (0.91, 0.760),
+                (0.9, 0.727),
+                (0.875, 0.675),
+                (0.85, 0.627),
+                (0.825, 0.584),
+                (0.8, 0.549),
+                (0.75, 0.469),
+                (0.7, 0.400),
+                (0.65, 0.343),
+                (0.6, 0.297),
                 (0.0, 0.000)
         };
 
