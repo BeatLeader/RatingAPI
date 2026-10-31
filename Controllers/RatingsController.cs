@@ -485,12 +485,12 @@ namespace RatingAPI.Controllers
         // than without on 2-3.5 star maps, and on Burn Expert+ (6.5 stars) an FS 98.68% paid 42pp more than a nomod 98.82%.
         // Share of the speed modifier's difference from nomod kept, by the map's nomod stars: a sigmoid,
         //   1 / (1 + e^-((stars - LowStarSpeedMidStars) / LowStarSpeedWidth))
-        // close to 0 on the lowest maps (the strongest nerf: 2% at 2 stars with the defaults), half at LowStarSpeedMidStars,
-        // then nearing all of it without ever getting there (95% at 9 stars, 99.8% at 12). LowStarSpeedWidth: stars per
-        // e-fold, smaller = sharper flip. Settable for experiments (portaBLe rerate Speed.LowStarSpeedMidStars=7); change the
-        // defaults here.
+        // close to 0 on the lowest maps (the strongest nerf: 4% kept at 2 stars with the defaults, 12% at 3.5), half at
+        // LowStarSpeedMidStars, then nearing all of it without ever getting there (88% at 8.5 stars, 96% at 10, 99.2% at 12).
+        // LowStarSpeedWidth: stars per e-fold, smaller = sharper flip (1.25, was 1: a bit less nerf at 3.5 stars, a bit more
+        // at 8.5). Settable for experiments (portaBLe rerate Speed.LowStarSpeedMidStars=7); change the defaults here.
         public static double LowStarSpeedMidStars { get; set; } = 6;
-        public static double LowStarSpeedWidth { get; set; } = 1;
+        public static double LowStarSpeedWidth { get; set; } = 1.25;
 
         // The share of a speed modifier's difference from nomod kept on a map with these nomod stars
         public static double LowStarSpeedShare(double nomodStars) =>
