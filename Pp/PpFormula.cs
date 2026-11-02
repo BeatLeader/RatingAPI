@@ -32,16 +32,16 @@
         // so AccCurvePower < 1 would cut their best scores there most. Doesn't move stars (read at 96%).
         public double LowStarCurvePower { get; set; } = 1.0;
         // (was 6.7242 and 9.606 on the old prod-scale stars, 1.1653 x (pp / 83.6925)^1.17507)
-        public double LowStarCurveStart { get; set; } = 7.6517;
-        public double LowStarCurveEnd { get; set; } = 10.3652;
+        public double LowStarCurveStart { get; set; } = 6.7309;
+        public double LowStarCurveEnd { get; set; } = 9.1178;
         // The acc curve power on the lowest-star maps (CurvePowerAt), before the ramp above: VeryLowStarCurvePower up to
         // VeryLowStarCurveStart stars, then linearly to LowStarCurvePower at VeryLowStarCurveEnd. Equal to LowStarCurvePower
         // = off. Lets the best plays on the easiest maps reach those of higher stars; the per-map curve rows (CurveSettings.
         // Table) can't do this since they can only lower the curve. Doesn't move stars (read at 96%).
         public double VeryLowStarCurvePower { get; set; } = 1.08;
         // (was 2.8818 and 4.803 on the old prod-scale stars, 1.1653 x (pp / 83.6925)^1.17507)
-        public double VeryLowStarCurveStart { get; set; } = 3.7205;
-        public double VeryLowStarCurveEnd { get; set; } = 5.7464;
+        public double VeryLowStarCurveStart { get; set; } = 3.2728;
+        public double VeryLowStarCurveEnd { get; set; } = 5.0549;
         // Tuned with BalanceTuner so tech-heavy maps pay the same as others of their stars (tech share slope near 0).
         // 0.587 with the Analyzer's BALANCED_TECH_SCALER 10 (0.13657 with 43.948, after the power 1.2477 was removed): the
         // balance tuner (TargetTolerance 0.002) from 0.54628, tech share slope -0.0046 -> 0, worth spread 0.03168 -> 0.03156.
@@ -52,11 +52,16 @@
         // more pp inflation).
         // 0.2417 (0.28 / 1.1584) with BALANCED_TECH_SCALER 6.917 (was 5.971): the same tech pp.
         // 0.2677 (0.2417 / 0.90294) with BALANCED_TECH_SCALER 6.2457 (was 6.917): the same tech pp.
-        public double TechWeight { get; set; } = 0.2677;
+        // 5.7887 (0.2677 x e^(3.2 x 0.96)) with TechAccExponent 0: tech pp flat in the acc, as pass pp, the same tech pp at 96%.
+        public double TechWeight { get; set; } = 5.7887;
         // 3.27 (was 3.5): on the P75 worth (each player's better efforts), tech 9-13 maps were 1.3-1.6% over others of their
         // stars and tech pp grew too fast with acc; 3.27 halves it (tech share slope +0.0062 -> about 0), as TechWeight 0.131
         // would, with a slightly lower worth spread. 3.2 with the rotation^1.5 / soft capped strain tech (with TechTopKnee 9).
-        public double TechAccExponent { get; set; } = 3.2;
+        // 0 (was 3.2): flat tech pp (TechWeight x tech, the acc dependence left to the acc pp and the acc relative pass pp).
+        // On the P75 worth the spread 0.0330 -> 0.0319 (1.6: 0.0326, 5: 0.0336); every tech percentile and tech / stars bin
+        // within 0.4% with TechTopSlope 0.7, slow / midspeed tech +0.29 / +0.07% (were +0.09 / -0.17%). The acc relative tech
+        // multiplier (TechRelExponent) on top raised the spread (0.0335-0.0345).
+        public double TechAccExponent { get; set; } = 0;
         // Stars = pp of a 96% score (before PpMultiplier) / StarDivisor. 54 (was 83.6925 when stars went linear, which put
         // 7 prod stars at 4.6): about prod's star numbers again (7 -> 7.1). The star thresholds below are on 54; those on
         // 83.6925 were x 83.6925 / 54 = 1.54986 (the low star bonus x 1 / 1.54986^1.98).
@@ -64,10 +69,14 @@
         // 11.07 / 12.30). The star thresholds here, in RatingsController (speed nerf), the acc reweighter and the worth were
         // x 54 / 49.4 = 1.09312 (the low star bonus x 1 / 1.09312^1.98), so pp is the same.
         // 48.61 (was 49.4): the top map's stars on Dev Acc's (15.58, The Purple Dimension; ours, Unwelcome School, was 15.33), thresholds x 49.4 / 48.61.
-        public double StarDivisor { get; set; } = 48.61;
+        // 55.26 (was 48.61): median stars on Dev Acc's (6.98) with the acc relative pass pp, thresholds x 48.61 / 55.26.
+        public double StarDivisor { get; set; } = 55.26;
         // Keeps the top 1000 players' average pp at prod's; retune when the formula changes it. 1.0299 (was 1.0199): the tech
         // refit (TechTopKnee 9, TechAccExponent 3.2) lowered players' pp about 1%.
-        public double PpMultiplier { get; set; } = 1.0299;
+        // 1.0190 (was 1.0299) with the acc relative pass pp (PassAccExponent 7) and TechTopSlope 1: the top 1000's average pp
+        // as before.
+        // 1.0173 with the flat tech pp (TechAccExponent 0, TechTopSlope 0.7) and the stronger low note nerf.
+        public double PpMultiplier { get; set; } = 1.0173;
 
         // Low star bonus: maps under LowStarBonusEnd stars pay more. Top players farm the easiest maps to 99%+, but stars are
         // measured at 96%, so pp vs stars fell off steeply at low stars. Stars include the bonus (StarsFromPp), and its
@@ -75,8 +84,8 @@
         // Worth compares each map with others of its stars, so the acc reweighter doesn't undo it. 0 = off.
         // 0.01948 x (5.504 - stars)^1.98: the old 0.00382 x (8.6454 - stars)^2.3 on the old prod-scale stars, refit on the
         // linear stars (RMS 0.006 of a bonus up to 0.545); 0.008181 x (8.5304 - stars)^1.98 on StarDivisor 54 (the same bonus)
-        public double LowStarBonus { get; set; } = 0.006644;
-        public double LowStarBonusEnd { get; set; } = 9.4762;
+        public double LowStarBonus { get; set; } = 0.008564;
+        public double LowStarBonusEnd { get; set; } = 8.3358;
         public double LowStarBonusPower { get; set; } = 1.98;
 
         // Mid star top bonus: 7-8 star maps pay top players less than on prod (matched scores ~1-3% under, their share of
@@ -88,10 +97,10 @@
         // modifier's own), like the low star bonus. 0 = off.
         // Stars (was 6, 7, 8 and 9.5 on the old prod-scale stars, 1.1653 x (pp / 83.6925)^1.17507)
         public double MidStarTopBonus { get; set; } = 0.04;
-        public double MidStarTopStart { get; set; } = 6.9446;
-        public double MidStarTopFull { get; set; } = 7.918;
-        public double MidStarTopFullEnd { get; set; } = 8.8708;
-        public double MidStarTopEnd { get; set; } = 10.2678;
+        public double MidStarTopStart { get; set; } = 6.1089;
+        public double MidStarTopFull { get; set; } = 6.9651;
+        public double MidStarTopFullEnd { get; set; } = 7.8033;
+        public double MidStarTopEnd { get; set; } = 9.0322;
         public double MidStarTopAccStart { get; set; } = 0.96;
         public double MidStarTopAccFull { get; set; } = 0.975;
 
@@ -136,7 +145,11 @@
         // 6.95 (6 x 1.1584) with BALANCED_TECH_SCALER 6.917 (was 5.971), the same tech.
         // 6.2754 (6.95 x 0.90294) with BALANCED_TECH_SCALER 6.2457 (was 6.917), the same tech.
         public double TechTopKnee { get; set; } = 6.2754;
-        public double TechTopSlope { get; set; } = 1.2;
+        // 1 (was 1.2) with the acc relative pass pp (PassAccExponent 7): 1.2 overpaid the 97-99th / 99th+ percentiles +0.9 /
+        // +1.5% (tech-heavy maps for their stars +1.0%), 1 +0.35 / +0.43% (+0.3%).
+        // 0.7 with the flat tech pp (TechAccExponent 0), which raised the 97-99th / 99th+ percentiles to +1.2 / +1.7%: now +0.2 /
+        // +0.1% (0.5: -0.5 / -1.1%).
+        public double TechTopSlope { get; set; } = 0.7;
 
         public PpFormula Clone() => (PpFormula)MemberwiseClone();
 
@@ -178,12 +191,64 @@
         public float AccPp(float curveValue, float accRating) =>
             accRating > 0 ? curveValue * (float)AccWeight * accRating : 0;
 
-        public float TechPp(float accuracy, float techRating)
+        // Acc relative pass pp: pass pp x e^(PassAccExponent x (acc - the map's predicted acc)), so beating the Acc AI's
+        // prediction pays more pass pp and falling short of it less (1 at the predicted acc). 0 = off (pass pp doesn't follow
+        // the acc). Maps without a predicted acc: 1.
+        // 10 with PassAccErrorOffset 1 (the reference is predicted acc - its error): speed maps +0.8% for the top 100 against
+        // their other plays (players ranked 5000+ -3.7 to -5.3%), maps predicted 99%+ -3% for the top 100, FS / SF scores 3%+
+        // under the predicted acc -1.7% for the top 1000. It spreads players' pp (top 100 +3%, ranked 5000+ -6%): PpMultiplier.
+        // 7 (was 10) once the balance tuner's worth used it too: on the P75 worth the pass / stars tilt -0.15 / -0.05% at the
+        // 20-40th / 80%+ (was -0.42 / +0.39% without, -0.04 / -0.26% with 10), maps predicted 98%+ with high pass -0.2% (were
+        // +0.9%), slow tech +0.1%; the worth spread 0.0308 -> 0.0330 (0.0336 with 10, 0.0325 with 5, which loses the high pass
+        // nerf).
+        public double PassAccExponent { get; set; } = 7;
+        // Cap of that multiplier (and its inverse as the floor), so far-off scores don't run away
+        public double PassAccMaxMultiplier { get; set; } = 3;
+
+        // On, the gap is relative to the map's predicted error: (acc - predicted acc) x PassAccReferenceError / (1 - predicted
+        // acc), so missing by 1% counts 3 times more on a map predicted at 99% than on one predicted at 96% (with 0.03)
+        public double PassAccRelativeError { get; set; } = 0;
+        public double PassAccReferenceError { get; set; } = 0.03;
+
+        // The reference acc is lowered by this share of the map's predicted error: predicted acc - PassAccErrorOffset x (1 -
+        // predicted acc). Top players fall short of the Acc AI's prediction more on maps that are harder to acc (0.9% at
+        // 95-97% predicted, 0.2% at 98-99%), so with 0 the multiplier favors the easy to acc maps.
+        public double PassAccErrorOffset { get; set; } = 1;
+
+        public float PassAccMultiplier(float accuracy, float predictedAcc)
+        {
+            if (PassAccExponent == 0 || !(predictedAcc > 0)) return 1;
+            double gap = accuracy - (predictedAcc - PassAccErrorOffset * (1 - predictedAcc));
+            if (PassAccRelativeError != 0) gap *= PassAccReferenceError / Math.Max(1 - predictedAcc, 0.001);
+            double m = Math.Exp(PassAccExponent * gap);
+            return (float)Math.Clamp(m, 1 / PassAccMaxMultiplier, PassAccMaxMultiplier);
+        }
+
+        // Acc relative tech pp: tech pp's acc term follows acc - TechAccRelative x (predicted acc - TechAccReference): 0 = the
+        // plain acc (as before), 1 = only how far the score is from the map's predicted acc (at TechAccReference's level)
+        public double TechAccRelative { get; set; } = 0;
+        public double TechAccReference { get; set; } = 0.97;
+
+        public float TechPp(float accuracy, float techRating, float predictedAcc = 0)
         {
             if (!(techRating > 0)) return 0;
             float tech = techRating;
             if (tech > TechTopKnee) tech = (float)(TechTopKnee + (tech - TechTopKnee) * TechTopSlope);
-            return MathF.Exp((float)TechAccExponent * accuracy) * (float)TechWeight * tech;
+            float acc = TechAccRelative != 0 && predictedAcc > 0 ? accuracy - (float)(TechAccRelative * (predictedAcc - TechAccReference)) : accuracy;
+            return MathF.Exp((float)TechAccExponent * acc) * (float)TechWeight * tech * TechAccMultiplier(accuracy, predictedAcc);
+        }
+
+        // Acc relative tech pp, as the pass one (PassAccMultiplier): tech pp x e^(TechRelExponent x (acc - (predicted acc -
+        // TechAccErrorOffset x (1 - predicted acc)))), capped at TechAccMaxMultiplier (and its inverse). 0 = off.
+        public double TechRelExponent { get; set; } = 0;
+        public double TechAccErrorOffset { get; set; } = 1;
+        public double TechAccMaxMultiplier { get; set; } = 3;
+
+        public float TechAccMultiplier(float accuracy, float predictedAcc)
+        {
+            if (TechRelExponent == 0 || !(predictedAcc > 0)) return 1;
+            double m = Math.Exp(TechRelExponent * (accuracy - (predictedAcc - TechAccErrorOffset * (1 - predictedAcc))));
+            return (float)Math.Clamp(m, 1 / TechAccMaxMultiplier, TechAccMaxMultiplier);
         }
 
         // Stars from pp at 96% (pass + acc + tech, before PpMultiplier), without the low star bonus

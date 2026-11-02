@@ -456,7 +456,7 @@ namespace RatingAPI.Controllers
                 if (name == "none" || !(result.PredictedAcc > 0)) continue;
                 var lack = result.LackMapCalculation;
                 result.AccRating = ar.GetRating(result.PredictedAcc, lack.PassRating, lack.TechRating, lack.HitDistance, lack.HardSwingRatio, nomodPass);
-                result.Stars = Pp.PpCalculator.ToStars((float)result.AccRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(result.PointList));
+                result.Stars = Pp.PpCalculator.ToStars((float)result.AccRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(result.PointList), (float)result.PredictedAcc);
             }
         }
 
@@ -475,7 +475,7 @@ namespace RatingAPI.Controllers
                 lack.PassRating = settings.LowNoteSpeedBlend(nomod.LackMapCalculation.PassRating, lack.PassRating, notes);
                 lack.TechRating = settings.LowNoteSpeedBlend(nomod.LackMapCalculation.TechRating, lack.TechRating, notes);
                 result.AccRating = settings.LowNoteSpeedBlend(nomod.AccRating, result.AccRating, notes);
-                result.Stars = Pp.PpCalculator.ToStars((float)result.AccRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(result.PointList));
+                result.Stars = Pp.PpCalculator.ToStars((float)result.AccRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(result.PointList), (float)result.PredictedAcc);
             }
         }
 
@@ -496,11 +496,12 @@ namespace RatingAPI.Controllers
         // over 6 stars was too strong (SF scores of 8-11 stars -7 to -5% under others of their stars, now -5.4 to -4.3%), and
         // El Lapiz's SF 99.27% on Falling Easy (4.48 stars) is the map's top score by a little (689.8pp vs Huskei's nomod 99.36%
         // 688.1; it was third, 684.6). FS over 7 stars +0.7 to +1.7%; Bizzy825's FS on Burn Expert+ 762 vs Kira's nomod 741.
-        public static double LowStarSpeedMidStars { get; set; } = 5.4;
-        public static double LowStarSpeedWidth { get; set; } = 1.2;
-        public static double LowStarSpeedWidthAbove { get; set; } = 0.6;
+        // Those were 5.4 / 1.2 / 0.6 on StarDivisor 48.61; now x 48.61 / 55.26 (the same shares).
+        public static double LowStarSpeedMidStars { get; set; } = 4.7502;
+        public static double LowStarSpeedWidth { get; set; } = 1.0556;
+        public static double LowStarSpeedWidthAbove { get; set; } = 0.5278;
         public static double LowStarSpeedMinShare { get; set; } = 0.15;
-        public static double LowStarSpeedMaxShare { get; set; } = 0.85;
+        public static double LowStarSpeedMaxShare { get; set; } = 1;
 
         // The share of a speed modifier's difference from nomod kept on a map with these nomod stars
         public static double LowStarSpeedShare(double nomodStars)
@@ -528,7 +529,7 @@ namespace RatingAPI.Controllers
                 result.AccRating = ar.GetRating(result.PredictedAcc, lack.PassRating, lack.TechRating, lack.HitDistance, lack.HardSwingRatio,
                     AccRating.SpeedHighPassFromNomod ? nomodLack.PassRating : null);
                 result.PointList = curve.GetCurve(lack, result.PredictedAcc);
-                result.Stars = Pp.PpCalculator.ToStars((float)result.AccRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(result.PointList));
+                result.Stars = Pp.PpCalculator.ToStars((float)result.AccRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(result.PointList), (float)result.PredictedAcc);
             }
         }
 
@@ -573,7 +574,7 @@ namespace RatingAPI.Controllers
             var pointList = curve.GetCurve(lack, predictedAcc);
             RatingResult result = new()
             {
-                Stars = Pp.PpCalculator.ToStars((float)accRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(pointList)),
+                Stars = Pp.PpCalculator.ToStars((float)accRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(pointList), (float)predictedAcc),
                 PredictedAcc = predictedAcc,
                 AccRating = accRating,
                 LackMapCalculation = lack,

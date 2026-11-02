@@ -372,9 +372,10 @@
         // 0 = off.
         public double LowNoteStart { get; set; } = 115;
         public double LowNoteRefNotes { get; set; } = 20;
-        // 0.9654: Quiet Water Easy (20 notes, 18 s) pays 600pp for a 100% (99%+ rows' C 0 and RatingC -1.2, base 100% at 7.2)
-        public double LowNoteRefMultiplier { get; set; } = 0.9654;
-        public double LowNoteMinMultiplier { get; set; } = 0.9654;
+        // 0.9654: Quiet Water Easy (20 notes, 18 s) pays 600pp for a 100% (99%+ rows' C 0 and RatingC -1.2, base 100% at 7.2).
+        // 0.8031: 500pp (586 with 0.9654 on StarDivisor 55.26; the map's stars 2.29 -> about 1.95, so its low star bonus rises).
+        public double LowNoteRefMultiplier { get; set; } = 0.8031;
+        public double LowNoteMinMultiplier { get; set; } = 0.8031;
         // Length: 1 - (1 - ShortRefMultiplier) x ln(ShortStart / span) / ln(ShortStart / ShortRefSpan), at least
         // ShortMinMultiplier, under ShortStart seconds (ShortRefSpan 12 s: SF on an 18 s map, so the speeds stay apart above
         // it). The span is the first to the last color note in real time (song time / the speed modifier's,
