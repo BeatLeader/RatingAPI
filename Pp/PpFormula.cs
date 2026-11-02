@@ -76,7 +76,8 @@
         // 1.0190 (was 1.0299) with the acc relative pass pp (PassAccExponent 7) and TechTopSlope 1: the top 1000's average pp
         // as before.
         // 1.0173 with the flat tech pp (TechAccExponent 0, TechTopSlope 0.7) and the stronger low note nerf.
-        public double PpMultiplier { get; set; } = 1.0173;
+        // 1.0238 with the pass pp floor, PassAccExponent 6, no mid star top bonus and LowStarSpeedMaxShare 0.8.
+        public double PpMultiplier { get; set; } = 1.0238;
 
         // Low star bonus: maps under LowStarBonusEnd stars pay more. Top players farm the easiest maps to 99%+, but stars are
         // measured at 96%, so pp vs stars fell off steeply at low stars. Stars include the bonus (StarsFromPp), and its
@@ -96,7 +97,10 @@
         // 96.5-98% on these maps, players ranked 2000+ almost never above 96%. stars: those of the version played (a speed
         // modifier's own), like the low star bonus. 0 = off.
         // Stars (was 6, 7, 8 and 9.5 on the old prod-scale stars, 1.1653 x (pp / 83.6925)^1.17507)
-        public double MidStarTopBonus { get; set; } = 0.04;
+        // 0 (was 0.04): with the acc relative pass pp and flat tech, every star band 4-11 within 0.3% on the P75 worth and the
+        // top 100 / top 1000 / ~10000 worth without it (7-8 stars for the top 1000 +0.06 -> +0.03%); their share of the top
+        // 1000's weighted pp 2.7 -> 1.5%.
+        public double MidStarTopBonus { get; set; } = 0;
         public double MidStarTopStart { get; set; } = 6.1089;
         public double MidStarTopFull { get; set; } = 6.9651;
         public double MidStarTopFullEnd { get; set; } = 7.8033;
@@ -201,9 +205,16 @@
         // 20-40th / 80%+ (was -0.42 / +0.39% without, -0.04 / -0.26% with 10), maps predicted 98%+ with high pass -0.2% (were
         // +0.9%), slow tech +0.1%; the worth spread 0.0308 -> 0.0330 (0.0336 with 10, 0.0325 with 5, which loses the high pass
         // nerf).
-        public double PassAccExponent { get; set; } = 7;
+        // 6 with the floor (PassAccMinMultiplier 0.8): the top 100's pass / stars 80%+ maps +1.69 -> +1.64%, 700pp+ plays fewer.
+        public double PassAccExponent { get; set; } = 6;
         // Cap of that multiplier (and its inverse as the floor), so far-off scores don't run away
         public double PassAccMaxMultiplier { get; set; } = 3;
+        // Below the reference: this exponent instead of PassAccExponent (negative = the same), and this floor instead of
+        // 1 / PassAccMaxMultiplier (0 = that), so players below their maps' reference can lose less pass pp than the top gains
+        public double PassAccExponentBelow { get; set; } = -1;
+        // 0.8: players far below their maps' reference lose at most 20% of the pass pp. On the P75 worth the spread 0.0329 ->
+        // 0.0314; pass-heavy speed maps for players ranked ~10000 -6.0 -> -4.5%, linear speed maps -5.1 -> -3.7%; the top unchanged.
+        public double PassAccMinMultiplier { get; set; } = 0.8;
 
         // On, the gap is relative to the map's predicted error: (acc - predicted acc) x PassAccReferenceError / (1 - predicted
         // acc), so missing by 1% counts 3 times more on a map predicted at 99% than on one predicted at 96% (with 0.03)
@@ -220,8 +231,9 @@
             if (PassAccExponent == 0 || !(predictedAcc > 0)) return 1;
             double gap = accuracy - (predictedAcc - PassAccErrorOffset * (1 - predictedAcc));
             if (PassAccRelativeError != 0) gap *= PassAccReferenceError / Math.Max(1 - predictedAcc, 0.001);
-            double m = Math.Exp(PassAccExponent * gap);
-            return (float)Math.Clamp(m, 1 / PassAccMaxMultiplier, PassAccMaxMultiplier);
+            double exponent = gap < 0 && PassAccExponentBelow >= 0 ? PassAccExponentBelow : PassAccExponent;
+            double m = Math.Exp(exponent * gap);
+            return (float)Math.Clamp(m, PassAccMinMultiplier > 0 ? PassAccMinMultiplier : 1 / PassAccMaxMultiplier, PassAccMaxMultiplier);
         }
 
         // Acc relative tech pp: tech pp's acc term follows acc - TechAccRelative x (predicted acc - TechAccReference): 0 = the
