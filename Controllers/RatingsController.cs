@@ -207,6 +207,7 @@ namespace RatingAPI.Controllers
                 }
                 UseNomodHighPass(results);
                 BlendLowNoteSpeeds(results);
+                BlendLowStarSpeeds(results);
             }
             _logger.LogWarning("Took " + sw.ElapsedMilliseconds);
 
@@ -240,6 +241,7 @@ namespace RatingAPI.Controllers
                     results[name] = GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, timescale);
                 }
                 UseNomodHighPass(results);
+                BlendLowStarSpeeds(results);
             }
             _logger.LogWarning("Took " + sw.ElapsedMilliseconds);
 
@@ -473,6 +475,51 @@ namespace RatingAPI.Controllers
                 lack.PassRating = settings.LowNoteSpeedBlend(nomod.LackMapCalculation.PassRating, lack.PassRating, notes);
                 lack.TechRating = settings.LowNoteSpeedBlend(nomod.LackMapCalculation.TechRating, lack.TechRating, notes);
                 result.AccRating = settings.LowNoteSpeedBlend(nomod.AccRating, result.AccRating, notes);
+                result.Stars = Pp.PpCalculator.ToStars((float)result.AccRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(result.PointList));
+            }
+        }
+
+        // Low star speed blend: on low and mid star maps, the speed-up modifiers' (FS, SFS, BFS, BSF) predicted acc, pass and
+        // tech are blended toward nomod's, and their acc rating, curve and stars computed again from them, so they pay less
+        // at every accuracy. Top players beat nomod scores with speed modifiers there: the top 300 score 0.5% higher with FS
+        // than without on 2-3.5 star maps, and on Burn Expert+ (6.5 stars) an FS 98.68% paid 42pp more than a nomod 98.82%.
+        // Share of the speed modifier's difference from nomod kept, by the map's nomod stars: a sigmoid between
+        // LowStarSpeedMinShare and LowStarSpeedMaxShare,
+        //   min + (max - min) / (1 + e^-((stars - LowStarSpeedMidStars) / LowStarSpeedWidth))
+        // so the nerf goes from 80% on the lowest maps (22% kept at 2.5 stars, 27% at 4) to 20% on the hardest (72% kept at
+        // 8.4 stars, 77% at 9.6, 79% at 11.3), half at LowStarSpeedMidStars. (Was 0 to 1: a full nerf on the lowest maps, none
+        // on the hardest.) LowStarSpeedWidth: stars per e-fold, smaller = sharper flip. Settable for experiments (portaBLe
+        // rerate Speed.LowStarSpeedMidStars=7); change the defaults here.
+        // 6.2514 and 1.1083 (was 6 and 1.25 on the old prod-scale stars, 1.1653 x (pp / 83.6925)^1.17507; 4.0335 and 0.7151 on
+        // StarDivisor 83.6925)
+        public static double LowStarSpeedMidStars { get; set; } = 6.2514;
+        public static double LowStarSpeedWidth { get; set; } = 1.1083;
+        public static double LowStarSpeedMinShare { get; set; } = 0.2;
+        public static double LowStarSpeedMaxShare { get; set; } = 0.8;
+
+        // The share of a speed modifier's difference from nomod kept on a map with these nomod stars
+        public static double LowStarSpeedShare(double nomodStars) =>
+            LowStarSpeedMinShare + (LowStarSpeedMaxShare - LowStarSpeedMinShare) / (1 + Math.Exp(-(nomodStars - LowStarSpeedMidStars) / LowStarSpeedWidth));
+
+        // The low star speed blend on every speed-up modifier. Needs the nomod ratings ("none"); after BlendLowNoteSpeeds.
+        public static void BlendLowStarSpeeds(Dictionary<string, RatingResult> results)
+        {
+            if (!results.TryGetValue("none", out var nomod) || !(nomod.PredictedAcc > 0)) return;
+            double share = LowStarSpeedShare(nomod.Stars);
+            if (share >= 1) return;
+            var ar = new AccRating();
+            var curve = new Curve();
+            var nomodLack = nomod.LackMapCalculation;
+            foreach (var (name, result) in results)
+            {
+                if (name is not ("FS" or "SFS" or "BFS" or "BSF") || !(result.PredictedAcc > 0)) continue;
+                var lack = result.LackMapCalculation;
+                result.PredictedAcc = nomod.PredictedAcc + share * (result.PredictedAcc - nomod.PredictedAcc);
+                lack.PassRating = nomodLack.PassRating + share * (lack.PassRating - nomodLack.PassRating);
+                lack.TechRating = nomodLack.TechRating + share * (lack.TechRating - nomodLack.TechRating);
+                result.AccRating = ar.GetRating(result.PredictedAcc, lack.PassRating, lack.TechRating, lack.HitDistance, lack.HardSwingRatio,
+                    AccRating.SpeedHighPassFromNomod ? nomodLack.PassRating : null);
+                result.PointList = curve.GetCurve(lack, result.PredictedAcc);
                 result.Stars = Pp.PpCalculator.ToStars((float)result.AccRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(result.PointList));
             }
         }

@@ -2,7 +2,7 @@
 {
     public class Curve
     {
-        // The base acc curve (Pp.PpCalculator.CurveValue): acc pp = curve(acc) * AccWeight * acc rating^AccRatingPower
+        // The base acc curve (Pp.PpCalculator.CurveValue): acc pp = curve(acc) * AccWeight * acc rating
         public List<(double x, double y)> baseCurve = BaseTable.ToList();
 
         // Lifted at low acc (+20% up to 80%, fading to 0 at 92%): maps players score low on were worth less for them than

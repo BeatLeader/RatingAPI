@@ -2,14 +2,12 @@
 {
     public class AccRating
     {
-        // acc rating = ACC_SCALE x Curve(EffectiveAcc(predictedAcc, pass, hit distance) + ACC_OFFSET) ^ -ACC_EXPONENT.
+        // acc rating = ACC_SCALE / Curve(EffectiveAcc(predictedAcc, pass, hit distance) + ACC_OFFSET), linear (no power to look
+        // like prod's).
         // portaBLe's balance tuner (Balance Tuning page) suggests ACC_OFFSET; ACC_SCALE is its reference. portaBLe's
         // ReplayUtils.AccRating uses this class, so change them here only.
-        // ACC_EXPONENT: 1 / Curve's top end is steeper than prod's acc ratings; fitted on the quantiles of prod's ranked acc
-        // ratings. Acc pp takes the acc rating to the inverse power (PpFormula.AccRatingPower), so acc pp scales with the
-        // unflattened rating. ACC_SCALE = 1.4528 x 15.1^0.8222 (the old 15.1 / Curve and its display curve combined).
-        public const double ACC_SCALE = 13.5382;
-        public const double ACC_EXPONENT = 0.8222;
+        // ACC_SCALE 14.8727: the same median acc rating (8.765) as with the old power 0.8222 (13.5382 with it).
+        public const double ACC_SCALE = 14.8727;
         public const double ACC_OFFSET = 0.0019;
 
         // The corrections' constants below are settable for experiments (portaBLe reacc); change their defaults here.
@@ -53,7 +51,10 @@
         public static double HIGH_PASS_BUFF_START { get; set; } = 13.5;
         public static double HIGH_PASS_BUFF_FULL { get; set; } = 14.5;
         // 0.001 with the rotation^1.5 / soft capped strain tech and its tech refit (pass 14.5+ +1.8-1.9% over with 0.0025, +0.9-1.0%)
-        public static double HIGH_PASS_BUFF { get; set; } = 0.001;
+        // 0 (off) with the parity model and the raw ratings: on the P75 worth pass 13.5+ maps (44) were about +0.6% over others
+        // of their stars with 0.001, about +0.2% without (13.5-14.5 +0.9 -> +0.6%, 14.5-15.5 -0.2 -> -1.0%, 15.5+ +1.3 -> +0.6%,
+        // small samples).
+        public static double HIGH_PASS_BUFF { get; set; } = 0;
 
         // On: speed modifiers (SS / FS / SF) take the high pass correction and buff from the map's nomod pass rating (both were
         // fitted on nomod scores; FS's ~1.2x pass puts 136 maps into the buff that their nomod pass doesn't reach, FS acc
@@ -84,9 +85,10 @@
         // worth the maps just past the knee were still 0.3-0.7% under (pass 9+: corrected -0.0073 against +0.0052 without); with
         // 1 and the lower TechAccExponent both are about 0, and the 700pp+ scores spread over more maps (447 -> 484, at most 26
         // -> 15 on one map). A slope of 0.03 instead left the maps just past the knee under.
+        // Slope and cap x1.2163 (were 0.02 and 0.12 with acc pp following the acc rating to the power 1.2163): the same pp.
         public static double HARD_SWING_KNEE { get; set; } = 1.0;
-        public static double HARD_SWING_SLOPE { get; set; } = 0.02;
-        public static double HARD_SWING_CAP { get; set; } = 0.12;
+        public static double HARD_SWING_SLOPE { get; set; } = 0.0243;
+        public static double HARD_SWING_CAP { get; set; } = 0.148;
 
         // The hard swing correction's multiplier of the acc rating. hardSwingRatio: Ratings.HardSwingRatio (0: none)
         public static double HardSwingMultiplier(double passRating, double hardSwingRatio) =>
@@ -101,13 +103,15 @@
             if (predictedAcc > 0)
             {
                 double effective = EffectiveAcc(predictedAcc ?? 0, passRating ?? 0, hitDistance, highPassRating);
-                difficulty_to_acc = ACC_SCALE * Math.Pow(Curve(predictedAcc ?? 0, effective + ACC_OFFSET), -ACC_EXPONENT)
+                difficulty_to_acc = ACC_SCALE / Curve(predictedAcc ?? 0, effective + ACC_OFFSET)
                     * HardSwingMultiplier(passRating ?? 0, hardSwingRatio);
             }
             else
             {
+                // No predicted acc: prod's old formula, then from its scale (13.5382 x curve^-0.8222) to the linear one
                 double tiny_tech = 0.0208f * (techRating ?? 0) + 1.1284f;
-                difficulty_to_acc = (-Math.Pow(tiny_tech, -(passRating ?? 0)) + 1) * 8 + 2 + 0.01f * (techRating ?? 0) * (passRating ?? 0);
+                double old = (-Math.Pow(tiny_tech, -(passRating ?? 0)) + 1) * 8 + 2 + 0.01f * (techRating ?? 0) * (passRating ?? 0);
+                difficulty_to_acc = old > 0 ? ACC_SCALE * Math.Pow(old / 13.5382, 1 / 0.8222) : old;
             }
             if (double.IsInfinity(difficulty_to_acc) || double.IsNaN(difficulty_to_acc) || double.IsNegativeInfinity(difficulty_to_acc))
             {
