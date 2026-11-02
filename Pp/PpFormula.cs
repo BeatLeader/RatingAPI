@@ -32,22 +32,27 @@
         // so AccCurvePower < 1 would cut their best scores there most. Doesn't move stars (read at 96%).
         public double LowStarCurvePower { get; set; } = 1.0;
         // (was 6.7242 and 9.606 on the old prod-scale stars, 1.1653 x (pp / 83.6925)^1.17507)
-        public double LowStarCurveStart { get; set; } = 6.8879;
-        public double LowStarCurveEnd { get; set; } = 9.3306;
+        public double LowStarCurveStart { get; set; } = 7.6517;
+        public double LowStarCurveEnd { get; set; } = 10.3652;
         // The acc curve power on the lowest-star maps (CurvePowerAt), before the ramp above: VeryLowStarCurvePower up to
         // VeryLowStarCurveStart stars, then linearly to LowStarCurvePower at VeryLowStarCurveEnd. Equal to LowStarCurvePower
         // = off. Lets the best plays on the easiest maps reach those of higher stars; the per-map curve rows (CurveSettings.
         // Table) can't do this since they can only lower the curve. Doesn't move stars (read at 96%).
         public double VeryLowStarCurvePower { get; set; } = 1.08;
         // (was 2.8818 and 4.803 on the old prod-scale stars, 1.1653 x (pp / 83.6925)^1.17507)
-        public double VeryLowStarCurveStart { get; set; } = 3.3491;
-        public double VeryLowStarCurveEnd { get; set; } = 5.1728;
+        public double VeryLowStarCurveStart { get; set; } = 3.7205;
+        public double VeryLowStarCurveEnd { get; set; } = 5.7464;
         // Tuned with BalanceTuner so tech-heavy maps pay the same as others of their stars (tech share slope near 0).
         // 0.587 with the Analyzer's BALANCED_TECH_SCALER 10 (0.13657 with 43.948, after the power 1.2477 was removed): the
         // balance tuner (TargetTolerance 0.002) from 0.54628, tech share slope -0.0046 -> 0, worth spread 0.03168 -> 0.03156.
         // 0.47 with TechTopKnee 4.5 (see there): about the same tech pp on the median map; 0.455 and 0.5045 moved the P75
         // worth by tech little (stars take most of a TechWeight change), 0.47 had the highest tech maps closest to 0.
-        public double TechWeight { get; set; } = 0.47;
+        // 0.28 with the linear strain + rotation tech (BALANCED_TECH_SCALER 5.933, median tech 2.15 -> 4.03): 0.25 kept the
+        // median map's tech pp, 0.28 has the tech-heavy maps for their stars 0.3-0.5% closer to 0 (0.31 only 0.2% more, with
+        // more pp inflation).
+        // 0.2417 (0.28 / 1.1584) with BALANCED_TECH_SCALER 6.917 (was 5.971): the same tech pp.
+        // 0.2677 (0.2417 / 0.90294) with BALANCED_TECH_SCALER 6.2457 (was 6.917): the same tech pp.
+        public double TechWeight { get; set; } = 0.2677;
         // 3.27 (was 3.5): on the P75 worth (each player's better efforts), tech 9-13 maps were 1.3-1.6% over others of their
         // stars and tech pp grew too fast with acc; 3.27 halves it (tech share slope +0.0062 -> about 0), as TechWeight 0.131
         // would, with a slightly lower worth spread. 3.2 with the rotation^1.5 / soft capped strain tech (with TechTopKnee 9).
@@ -55,7 +60,11 @@
         // Stars = pp of a 96% score (before PpMultiplier) / StarDivisor. 54 (was 83.6925 when stars went linear, which put
         // 7 prod stars at 4.6): about prod's star numbers again (7 -> 7.1). The star thresholds below are on 54; those on
         // 83.6925 were x 83.6925 / 54 = 1.54986 (the low star bonus x 1 / 1.54986^1.98).
-        public double StarDivisor { get; set; } = 54;
+        // 49.4 (was 54): the top end of the stars nearer the Dev database's (p95 / p99 12.10 / 13.44 vs 11.93 / 13.64, was
+        // 11.07 / 12.30). The star thresholds here, in RatingsController (speed nerf), the acc reweighter and the worth were
+        // x 54 / 49.4 = 1.09312 (the low star bonus x 1 / 1.09312^1.98), so pp is the same.
+        // 48.61 (was 49.4): the top map's stars on Dev Acc's (15.58, The Purple Dimension; ours, Unwelcome School, was 15.33), thresholds x 49.4 / 48.61.
+        public double StarDivisor { get; set; } = 48.61;
         // Keeps the top 1000 players' average pp at prod's; retune when the formula changes it. 1.0299 (was 1.0199): the tech
         // refit (TechTopKnee 9, TechAccExponent 3.2) lowered players' pp about 1%.
         public double PpMultiplier { get; set; } = 1.0299;
@@ -66,8 +75,8 @@
         // Worth compares each map with others of its stars, so the acc reweighter doesn't undo it. 0 = off.
         // 0.01948 x (5.504 - stars)^1.98: the old 0.00382 x (8.6454 - stars)^2.3 on the old prod-scale stars, refit on the
         // linear stars (RMS 0.006 of a bonus up to 0.545); 0.008181 x (8.5304 - stars)^1.98 on StarDivisor 54 (the same bonus)
-        public double LowStarBonus { get; set; } = 0.008181;
-        public double LowStarBonusEnd { get; set; } = 8.5304;
+        public double LowStarBonus { get; set; } = 0.006644;
+        public double LowStarBonusEnd { get; set; } = 9.4762;
         public double LowStarBonusPower { get; set; } = 1.98;
 
         // Mid star top bonus: 7-8 star maps pay top players less than on prod (matched scores ~1-3% under, their share of
@@ -79,10 +88,10 @@
         // modifier's own), like the low star bonus. 0 = off.
         // Stars (was 6, 7, 8 and 9.5 on the old prod-scale stars, 1.1653 x (pp / 83.6925)^1.17507)
         public double MidStarTopBonus { get; set; } = 0.04;
-        public double MidStarTopStart { get; set; } = 6.2514;
-        public double MidStarTopFull { get; set; } = 7.1277;
-        public double MidStarTopFullEnd { get; set; } = 7.9853;
-        public double MidStarTopEnd { get; set; } = 9.2429;
+        public double MidStarTopStart { get; set; } = 6.9446;
+        public double MidStarTopFull { get; set; } = 7.918;
+        public double MidStarTopFullEnd { get; set; } = 8.8708;
+        public double MidStarTopEnd { get; set; } = 10.2678;
         public double MidStarTopAccStart { get; set; } = 0.96;
         public double MidStarTopAccFull { get; set; } = 0.975;
 
@@ -118,8 +127,16 @@
         // percentile) and TechWeight 0.47: top 10% -0.4 to +0.5% (top 100 about 0, ~10000 -0.5% at the 90-97th), top tech
         // for stars about 0; the 75-90th percentile +0.8%, under the median -0.5% (TechWeight doesn't move those); worth
         // RMS 0.0308 -> 0.0312. 3.5 left the top 10% -0.3 to -0.5%; 6 overpaid them (+0.7 to +1.2%, top 100 +0.7%).
-        public double TechTopKnee { get; set; } = 4.5;
-        public double TechTopSlope { get; set; } = 0.33;
+        // Knee 6 (about the 89th percentile) and slope 1.6, an expansion, with the linear strain + rotation tech, whose top is
+        // compressed: with knee 6.1 / slope 0.33 the 90-97th / 97-99th / 99th+ percentiles were -1.0 / -2.6 / -4.3% on the
+        // P75 worth, -0.7 / -1.4 / -2.3% with no knee; slope 1.5 -0.4 / -0.1 / -0.4%, 1.75 -0.2 / +0.2 / +0.3% (TechWeight 0.28).
+        // 1.2 with the swing tech's powers back (strain^1.25, rotation^1.5), which spread the top: 1.6 overpaid the 97-99th /
+        // 99th+ percentiles +1.0 / +2.2%; 1.2 +0.2 / +0.7% (no expansion -0.2 / -0.2%, but tech-heavy maps for their stars
+        // -0.4%), the 90-97th -0.3%.
+        // 6.95 (6 x 1.1584) with BALANCED_TECH_SCALER 6.917 (was 5.971), the same tech.
+        // 6.2754 (6.95 x 0.90294) with BALANCED_TECH_SCALER 6.2457 (was 6.917), the same tech.
+        public double TechTopKnee { get; set; } = 6.2754;
+        public double TechTopSlope { get; set; } = 1.2;
 
         public PpFormula Clone() => (PpFormula)MemberwiseClone();
 

@@ -485,21 +485,29 @@ namespace RatingAPI.Controllers
         // than without on 2-3.5 star maps, and on Burn Expert+ (6.5 stars) an FS 98.68% paid 42pp more than a nomod 98.82%.
         // Share of the speed modifier's difference from nomod kept, by the map's nomod stars: a sigmoid between
         // LowStarSpeedMinShare and LowStarSpeedMaxShare,
-        //   min + (max - min) / (1 + e^-((stars - LowStarSpeedMidStars) / LowStarSpeedWidth))
-        // so the nerf goes from 80% on the lowest maps (22% kept at 2.5 stars, 27% at 4) to 20% on the hardest (72% kept at
-        // 8.4 stars, 77% at 9.6, 79% at 11.3), half at LowStarSpeedMidStars. (Was 0 to 1: a full nerf on the lowest maps, none
-        // on the hardest.) LowStarSpeedWidth: stars per e-fold, smaller = sharper flip. Settable for experiments (portaBLe
-        // rerate Speed.LowStarSpeedMidStars=7); change the defaults here.
-        // 6.2514 and 1.1083 (was 6 and 1.25 on the old prod-scale stars, 1.1653 x (pp / 83.6925)^1.17507; 4.0335 and 0.7151 on
-        // StarDivisor 83.6925)
-        public static double LowStarSpeedMidStars { get; set; } = 6.2514;
-        public static double LowStarSpeedWidth { get; set; } = 1.1083;
-        public static double LowStarSpeedMinShare { get; set; } = 0.2;
-        public static double LowStarSpeedMaxShare { get; set; } = 0.8;
+        //   min + (max - min) / (1 + e^-((stars - LowStarSpeedMidStars) / width))
+        // with width LowStarSpeedWidth under LowStarSpeedMidStars and LowStarSpeedWidthAbove over it (both halves meet at
+        // the middle share; a smaller LowStarSpeedWidthAbove reaches LowStarSpeedMaxShare sooner over the middle)
+        // so the nerf goes from 85% on the lowest maps (21% kept at 2.5 stars, 32% at 4) to 15% on the hardest (66% kept at
+        // 6 stars, 80% at 7, 84% at 8, 85% from 10), half at LowStarSpeedMidStars. (Was 0 to 1: a full nerf on the lowest maps,
+        // none on the hardest.) Widths: stars per e-fold, smaller = sharper. Settable for experiments (portaBLe rerate
+        // Speed.LowStarSpeedMidStars=7); change the defaults here.
+        // Middle 5.4 (was 6) and LowStarSpeedWidthAbove 0.6 (was the same 1.2 on both sides), on StarDivisor 48.61: the nerf
+        // over 6 stars was too strong (SF scores of 8-11 stars -7 to -5% under others of their stars, now -5.4 to -4.3%), and
+        // El Lapiz's SF 99.27% on Falling Easy (4.48 stars) is the map's top score by a little (689.8pp vs Huskei's nomod 99.36%
+        // 688.1; it was third, 684.6). FS over 7 stars +0.7 to +1.7%; Bizzy825's FS on Burn Expert+ 762 vs Kira's nomod 741.
+        public static double LowStarSpeedMidStars { get; set; } = 5.4;
+        public static double LowStarSpeedWidth { get; set; } = 1.2;
+        public static double LowStarSpeedWidthAbove { get; set; } = 0.6;
+        public static double LowStarSpeedMinShare { get; set; } = 0.15;
+        public static double LowStarSpeedMaxShare { get; set; } = 0.85;
 
         // The share of a speed modifier's difference from nomod kept on a map with these nomod stars
-        public static double LowStarSpeedShare(double nomodStars) =>
-            LowStarSpeedMinShare + (LowStarSpeedMaxShare - LowStarSpeedMinShare) / (1 + Math.Exp(-(nomodStars - LowStarSpeedMidStars) / LowStarSpeedWidth));
+        public static double LowStarSpeedShare(double nomodStars)
+        {
+            double width = nomodStars < LowStarSpeedMidStars ? LowStarSpeedWidth : LowStarSpeedWidthAbove;
+            return LowStarSpeedMinShare + (LowStarSpeedMaxShare - LowStarSpeedMinShare) / (1 + Math.Exp(-(nomodStars - LowStarSpeedMidStars) / width));
+        }
 
         // The low star speed blend on every speed-up modifier. Needs the nomod ratings ("none"); after BlendLowNoteSpeeds.
         public static void BlendLowStarSpeeds(Dictionary<string, RatingResult> results)
