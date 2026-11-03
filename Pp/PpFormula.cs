@@ -8,6 +8,7 @@
     //   tech pp = e^(TechAccExponent * acc) * TechWeight * tech   (above TechTopKnee each point counts TechTopSlope)
     //   pp      = (pass + acc + tech) * PpMultiplier   (Scale)
     //   pp      = pp * (1 + LowStarBonus * (LowStarBonusEnd - stars)^LowStarBonusPower)   (only under LowStarBonusEnd stars)
+    //   pp      = pp * MidStarTopMultiplier   (4-11.5 stars, from the predicted acc - 3%, fading out at 600-700pp)
     //   stars   = final pp of a 96% score / PpMultiplier / StarDivisor, low star bonus included (StarsFromPp). PpMultiplier
     //             doesn't move stars. Linear: no power to look like prod's (stars were 1.1653 x (pp / 83.6925)^1.17507; the
     //             star thresholds below were converted from those, new = (old / 1.1653)^(1 / 1.17507) x 83.6925 / StarDivisor,
@@ -77,7 +78,10 @@
         // as before.
         // 1.0173 with the flat tech pp (TechAccExponent 0, TechTopSlope 0.7) and the stronger low note nerf.
         // 1.0238 with the pass pp floor, PassAccExponent 6, no mid star top bonus and LowStarSpeedMaxShare 0.8.
-        public double PpMultiplier { get; set; } = 1.0238;
+        // 1.0176 (1.0238 x 16447.2 / 16547.0) with the mid star top bonus (x1.035): the top 1000's average pp as before.
+        // 1.0151 with the mid star top bonus x1.05 fading 600-700pp (emulated: the top 1000's average pp as with x1.035).
+        // 1.0128 with its stars 4 -> 6 ... 9 -> 11.5 (emulated: the top 1000's average pp as with x1.035).
+        public double PpMultiplier { get; set; } = 1.0128;
 
         // Low star bonus: maps under LowStarBonusEnd stars pay more. Top players farm the easiest maps to 99%+, but stars are
         // measured at 96%, so pp vs stars fell off steeply at low stars. Stars include the bonus (StarsFromPp), and its
@@ -89,7 +93,64 @@
         public double LowStarBonusEnd { get; set; } = 8.3358;
         public double LowStarBonusPower { get; set; } = 1.98;
 
+        // Mid star top bonus: a top 1000 player's best effort on a 7-9 star map paid too little to count among their top plays
+        // (a 98.5% on ABCD E+, 9.12 stars predicted 97.67%, ~709pp). pp x (1 + MidStarTopBonus x bump(stars) x ramp(acc) x
+        // fade(pp)): bump is 1 from MidStarTopFull to MidStarTopFullEnd stars, easing (smoothstep) to 0 at MidStarTopStart /
+        // MidStarTopEnd; ramp eases from 0 at the map's predicted acc - MidStarTopAccBelow to 1 at its predicted acc +
+        // MidStarTopAccAbove; the bonus then fades linearly from the score's pp (before it) MidStarTopFadeStart to 0 at
+        // MidStarTopFadeEnd, so it never pushes a score to MidStarTopFadeEnd (700pp only from a score that gets there on its
+        // own) and pp still rises with acc. Stars and the acc ratings don't move. stars and predicted acc: those of the
+        // version played (a speed modifier's own), like the low star bonus. 0 = off.
+        // A ramp from predicted - 0.25% to + 0.75% only paid the top 100 (+0.5-0.85% on their 6-10.5 star plays, ranks
+        // 101-1000 +0.02%) and made 31 plays 800+ (4 before); x0.07 from predicted - 1.5% moved players with mostly mid star
+        // speed versions ~100 ranks up.
+        // 0.035 from predicted - 3%: on 7-9 star plays the top 100 +2.3-2.7%, ranks 301-1000 +0.9-1.3%; 700+ plays on 6-10.5
+        // stars 552 -> 923 (top 50 players), 800+ none; the top 100's weighted pp on 7-9 stars 7.1 -> 12.2% (Old Prod 13.8%,
+        // New Prod 7.8%). Worth compares maps with others of their stars, so the acc reweighter doesn't undo it: its multipliers
+        // on 7-9 star maps moved -0.02% on average (sd 0.4%), and the top 100's 7-9 star share was 12.6% after it.
+        // x1.05 fading 600-700pp (was x1.035 fading 700-800): the bonus added the most pp (+24) at 700, so for the top 20 700+
+        // plays were as common on 7-9.5 star maps as on 10.5-12 (10.8 / 10.4% of their plays) and 750+ 3.5x more common, while
+        // 600+ stayed rarer (54 / 71%). Emulated: 700+ / 750+ back to without the bonus (5.3 / 6.4 / 10.4% on 7-9.5 / 9.5-10.5
+        // / 10.5-12 stars), 600+ for ranks 21-100 on 7-9.5 stars 22 -> 28% (9.5-10.5: 49%), the top 1000's weighted pp on
+        // 7-9.5 stars 15.4 -> 17.4%.
+        // Stars 4 -> 6 ... 9 -> 11.5 (were 6 -> 7 ... 9.5 -> 10.5), emulated. Start: 5-6 star maps paid ranks 101-1000 the
+        // least of 4-7 stars (500+ on 5.4% of their plays, 4-5: 8.4%, 6-7: 9.6%); 8.8% now, under 6-7's (4 -> 5 put 4-5 over
+        // 5-6). End: with the pp fade already cutting the bonus at 9.5+ stars (par scores over 600pp), the fade-out over one
+        // star made 10-10.5 star maps pay less than 9.5-10 (the top 100's pp at the predicted acc 636 -> 634, ranks 101-1000's
+        // 600+ 3.5 -> 2.8%); now rising at every half star (629, 635, 641, 650 at 9-10.5).
+        public double MidStarTopBonus { get; set; } = 0.05;
+        public double MidStarTopStart { get; set; } = 4;
+        public double MidStarTopFull { get; set; } = 6;
+        public double MidStarTopFullEnd { get; set; } = 9;
+        public double MidStarTopEnd { get; set; } = 11.5;
+        public double MidStarTopAccBelow { get; set; } = 0.03;
+        public double MidStarTopAccAbove { get; set; } = 0;
+        public double MidStarTopFadeStart { get; set; } = 600;
+        public double MidStarTopFadeEnd { get; set; } = 700;
+
         public static PpFormula Current { get; set; } = new();
+
+        // pp: the score's pp before the bonus
+        public float MidStarTopMultiplier(float stars, float accuracy, float predictedAcc, float pp)
+        {
+            if (MidStarTopBonus == 0 || !(predictedAcc > 0) || !(pp < MidStarTopFadeEnd)) return 1;
+            double from = predictedAcc - MidStarTopAccBelow;
+            if (!(accuracy > from)) return 1;
+            double bump = MidStarTopBump(stars);
+            if (bump == 0) return 1;
+            double ramp = Ease((accuracy - from) / (MidStarTopAccBelow + MidStarTopAccAbove));
+            double fade = Math.Clamp((MidStarTopFadeEnd - pp) / (MidStarTopFadeEnd - MidStarTopFadeStart), 0, 1);
+            return 1 + (float)(MidStarTopBonus * bump * ramp * fade);
+        }
+
+        private double MidStarTopBump(float stars)
+        {
+            if (!(stars > MidStarTopStart && stars < MidStarTopEnd)) return 0;
+            return stars < MidStarTopFull ? Ease((stars - MidStarTopStart) / (MidStarTopFull - MidStarTopStart))
+                : stars > MidStarTopFullEnd ? Ease((MidStarTopEnd - stars) / (MidStarTopEnd - MidStarTopFullEnd)) : 1;
+        }
+
+        private static double Ease(double t) { t = Math.Clamp(t, 0, 1); return t * t * (3 - 2 * t); }
 
         // Tech pp top compression: above TechTopKnee tech, each point counts TechTopSlope. 1 = off. Tech share was only
         // overpaid on the highest-tech maps (13+), so this trims them without touching tech 11-13. 9 (was 12) with the rotation^1.5
@@ -229,6 +290,6 @@
         public float Scale(float pp) => (float)PpMultiplier * pp;
 
         public override string ToString() => FormattableString.Invariant(
-            $"pass {PassScale}*e^({PassInner}*p^(1/{PassExponent}))-{PassOffset} (x{PassTopSlope} above {PassTopKnee}), acc x{AccWeight}*a, tech e^({TechAccExponent}a)*{TechWeight}*t (x{TechTopSlope} above {TechTopKnee}), x{PpMultiplier}, stars pp/{StarDivisor}, low star bonus {LowStarBonus}*({LowStarBonusEnd}-stars)^{LowStarBonusPower}");
+            $"pass {PassScale}*e^({PassInner}*p^(1/{PassExponent}))-{PassOffset} (x{PassTopSlope} above {PassTopKnee}), acc x{AccWeight}*a, tech e^({TechAccExponent}a)*{TechWeight}*t (x{TechTopSlope} above {TechTopKnee}), x{PpMultiplier}, stars pp/{StarDivisor}, low star bonus {LowStarBonus}*({LowStarBonusEnd}-stars)^{LowStarBonusPower}, mid star top bonus {MidStarTopBonus} ({MidStarTopStart}-{MidStarTopFull}-{MidStarTopFullEnd}-{MidStarTopEnd} stars, predicted -{MidStarTopAccBelow} to +{MidStarTopAccAbove} acc, fading {MidStarTopFadeStart}-{MidStarTopFadeEnd}pp)");
     }
 }
