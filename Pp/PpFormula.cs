@@ -264,7 +264,8 @@
         }
 
         // Stars from pp at 96% (pass + acc + tech, before PpMultiplier), without the low star bonus
-        public float Stars(float ppAt96) => (float)(ppAt96 / StarDivisor);
+        // 1.05 power to scale the stars like old prod
+        public float Stars(float ppAt96) => (float)(Math.Pow(ppAt96 / StarDivisor, 1.05));
 
         // Stars from pp at 96% before the low star bonus (before PpMultiplier): the stars s with
         // s = Stars(ppAt96 * LowStarMultiplier(s)), so they match the final pp of a 96% score, bonus included. The bonus
