@@ -33,16 +33,16 @@
         // so AccCurvePower < 1 would cut their best scores there most. Doesn't move stars (read at 96%).
         public double LowStarCurvePower { get; set; } = 1.0;
         // (was 6.7242 and 9.606 on the old prod-scale stars, 1.1653 x (pp / 83.6925)^1.17507)
-        public double LowStarCurveStart { get; set; } = 6.7309;
-        public double LowStarCurveEnd { get; set; } = 9.1178;
+        public double LowStarCurveStart { get; set; } = 7.1529;
+        public double LowStarCurveEnd { get; set; } = 9.6894;
         // The acc curve power on the lowest-star maps (CurvePowerAt), before the ramp above: VeryLowStarCurvePower up to
         // VeryLowStarCurveStart stars, then linearly to LowStarCurvePower at VeryLowStarCurveEnd. Equal to LowStarCurvePower
         // = off. Lets the best plays on the easiest maps reach those of higher stars; the per-map curve rows (CurveSettings.
         // Table) can't do this since they can only lower the curve. Doesn't move stars (read at 96%).
         public double VeryLowStarCurvePower { get; set; } = 1.08;
         // (was 2.8818 and 4.803 on the old prod-scale stars, 1.1653 x (pp / 83.6925)^1.17507)
-        public double VeryLowStarCurveStart { get; set; } = 3.2728;
-        public double VeryLowStarCurveEnd { get; set; } = 5.0549;
+        public double VeryLowStarCurveStart { get; set; } = 3.478;
+        public double VeryLowStarCurveEnd { get; set; } = 5.3718;
         // Tuned with BalanceTuner so tech-heavy maps pay the same as others of their stars (tech share slope near 0).
         // 0.587 with the Analyzer's BALANCED_TECH_SCALER 10 (0.13657 with 43.948, after the power 1.2477 was removed): the
         // balance tuner (TargetTolerance 0.002) from 0.54628, tech share slope -0.0046 -> 0, worth spread 0.03168 -> 0.03156.
@@ -63,15 +63,9 @@
         // within 0.4% with TechTopSlope 0.7, slow / midspeed tech +0.29 / +0.07% (were +0.09 / -0.17%). The acc relative tech
         // multiplier (tech pp x e^(exponent x (acc - reference)), as the pass one) on top raised the spread (0.0335-0.0345).
         public double TechAccExponent { get; set; } = 0;
-        // Stars = pp of a 96% score (before PpMultiplier) / StarDivisor. 54 (was 83.6925 when stars went linear, which put
-        // 7 prod stars at 4.6): about prod's star numbers again (7 -> 7.1). The star thresholds below are on 54; those on
-        // 83.6925 were x 83.6925 / 54 = 1.54986 (the low star bonus x 1 / 1.54986^1.98).
-        // 49.4 (was 54): the top end of the stars nearer the Dev database's (p95 / p99 12.10 / 13.44 vs 11.93 / 13.64, was
-        // 11.07 / 12.30). The star thresholds here, in RatingsController (speed nerf), the acc reweighter and the worth were
-        // x 54 / 49.4 = 1.09312 (the low star bonus x 1 / 1.09312^1.98), so pp is the same.
-        // 48.61 (was 49.4): the top map's stars on Dev Acc's (15.58, The Purple Dimension; ours, Unwelcome School, was 15.33), thresholds x 49.4 / 48.61.
-        // 55.26 (was 48.61): median stars on Dev Acc's (6.98) with the acc relative pass pp, thresholds x 48.61 / 55.26.
-        public double StarDivisor { get; set; } = 55.26;
+        // Stars = pp of a 96% score (before PpMultiplier) / StarDivisor. 52 (was 55.26): the star thresholds here, in
+        // RatingsController (speed nerf), the acc reweighter and the worth x 55.26 / 52 (the low star bonus x 1 / 1.06269^1.98), so pp is the same.
+        public double StarDivisor { get; set; } = 52;
         // Keeps the top 1000 players' average pp at prod's; retune when the formula changes it. 1.0299 (was 1.0199): the tech
         // refit (TechTopKnee 9, TechAccExponent 3.2) lowered players' pp about 1%.
         // 1.0190 (was 1.0299) with the acc relative pass pp (PassAccExponent 7) and TechTopSlope 1: the top 1000's average pp
@@ -89,8 +83,8 @@
         // Worth compares each map with others of its stars, so the acc reweighter doesn't undo it. 0 = off.
         // 0.01948 x (5.504 - stars)^1.98: the old 0.00382 x (8.6454 - stars)^2.3 on the old prod-scale stars, refit on the
         // linear stars (RMS 0.006 of a bonus up to 0.545); 0.008181 x (8.5304 - stars)^1.98 on StarDivisor 54 (the same bonus)
-        public double LowStarBonus { get; set; } = 0.008564;
-        public double LowStarBonusEnd { get; set; } = 8.3358;
+        public double LowStarBonus { get; set; } = 0.007593;
+        public double LowStarBonusEnd { get; set; } = 8.8584;
         public double LowStarBonusPower { get; set; } = 1.98;
 
         // Mid star top bonus: a top 1000 player's best effort on a 7-9 star map paid too little to count among their top plays
@@ -119,10 +113,10 @@
         // star made 10-10.5 star maps pay less than 9.5-10 (the top 100's pp at the predicted acc 636 -> 634, ranks 101-1000's
         // 600+ 3.5 -> 2.8%); now rising at every half star (629, 635, 641, 650 at 9-10.5).
         public double MidStarTopBonus { get; set; } = 0.05;
-        public double MidStarTopStart { get; set; } = 4;
-        public double MidStarTopFull { get; set; } = 6;
-        public double MidStarTopFullEnd { get; set; } = 9;
-        public double MidStarTopEnd { get; set; } = 11.5;
+        public double MidStarTopStart { get; set; } = 4.2508;
+        public double MidStarTopFull { get; set; } = 6.3762;
+        public double MidStarTopFullEnd { get; set; } = 9.5642;
+        public double MidStarTopEnd { get; set; } = 12.221;
         public double MidStarTopAccBelow { get; set; } = 0.03;
         public double MidStarTopAccAbove { get; set; } = 0;
         public double MidStarTopFadeStart { get; set; } = 600;
