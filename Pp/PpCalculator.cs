@@ -73,7 +73,7 @@ namespace RatingAPI.Pp
             float curveValue = CurveValue(accuracy, curve);
             if (power != 1) curveValue = formula.AccCurve(curveValue, starCurveValue, power);
             return (formula.PassPp(passRating) * formula.PassAccMultiplier(accuracy, predictedAcc), formula.AccPp(curveValue, accRating),
-                formula.TechPp(accuracy, techRating, predictedAcc));
+                formula.TechPp(accuracy, techRating));
         }
 
         // A map's ratings prepared for ScorePp (their stars and their curve's value at StarAccuracy)
@@ -126,18 +126,17 @@ namespace RatingAPI.Pp
             if (!modifiers.Contains("NF"))
             {
                 var formula = PpFormula.Current;
-                // The low star bonus (PpFormula.LowStarMultiplier), the mid star top bonus (MidStarTopMultiplier) and the acc
-                // curve power use the stars of the ratings each pp uses
+                // The low star bonus (PpFormula.LowStarMultiplier) and the acc curve power use the stars of the ratings each pp uses
                 var map = ratings.Ratings;
                 float stars = ratings.Stars;
                 (passPP, accPP, techPP) = GetPp(accuracy, map.AccRating, map.PassRating, map.TechRating, map.Curve, formula.CurvePowerAt(stars), ratings.StarCurveValue, map.PredictedAcc);
-                rawPP = Scale(passPP + accPP + techPP) * formula.LowStarMultiplier(stars) * formula.MidStarTopMultiplier(stars, accuracy);
+                rawPP = Scale(passPP + accPP + techPP) * formula.LowStarMultiplier(stars);
 
                 var prepared = speedRatings ?? ratings;
                 var score = prepared.Ratings;
                 float scoreStars = prepared.Stars;
                 (passPP, accPP, techPP) = GetPp(accuracy, score.AccRating * mp, score.PassRating * mp, score.TechRating * mp, score.Curve, formula.CurvePowerAt(scoreStars), prepared.StarCurveValue, score.PredictedAcc);
-                fullPP = Scale(passPP + accPP + techPP) * formula.LowStarMultiplier(scoreStars) * formula.MidStarTopMultiplier(scoreStars, accuracy);
+                fullPP = Scale(passPP + accPP + techPP) * formula.LowStarMultiplier(scoreStars);
                 if (passPP + accPP + techPP > 0) {
                     increase = fullPP / (passPP + accPP + techPP);
                 }

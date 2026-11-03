@@ -330,7 +330,7 @@
     // read at the predicted acc, the flatter top raised the acc rating of maps predicted above 99% by up to x1.10, and the
     // easiest acc maps' 99.5%+ scores with it.
     // 4. The 0.975 and 0.980 rows (7-8 star maps and speed versions rated there) start their top at 98.3% instead of 98.5%,
-    // as a straight line (C 0): the mid star top bonus (PpFormula.MidStarTopBonus) pushed their 98.7%+ scores past 800pp
+    // as a straight line (C 0): the mid star top bonus (since removed from PpFormula) pushed their 98.7%+ scores past 800pp
     // (Let Mom Sleep Hard SF 834). The acc rating reads the same curve: unchanged up to ~98.1% predicted acc (it reads the
     // curve at the predicted acc + ACC_OFFSET, under A), slightly higher (up to x1.003) at 98.2-98.8%, where it reads the
     // new top. The 0.985 row's C -1.2 -> -0.6 (between its neighbours' 0): at -1.2, maps predicted 98.3-98.5% paid more for
