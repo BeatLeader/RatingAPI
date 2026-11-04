@@ -62,6 +62,9 @@ namespace RatingAPI.Controllers
         // Base NJS of the difficulty from Info.dat (the speed modifier isn't applied)
         [JsonPropertyName("njs")]
         public float Njs { get; set; } = 0;
+        // Speed / tech / acc over time, from the same swings and note predictions (RatingBreakdown)
+        [JsonPropertyName("breakdown")]
+        public RatingBreakdown? Breakdown { get; set; }
     }
 
     public class Point
@@ -566,7 +569,7 @@ namespace RatingAPI.Controllers
             var length = end - start;
             if (start == 9999 || end == 0) length = 0;
 
-            var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult);
+            var (predictedAcc, noteAccs, noteTimes) = ai.GetAIAccAndHits(mapdata, bpm, timescale, njsMult);
             AccRating ar = new();
             var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating, ratings.HitDistance, ratings.HardSwingRatio);
             Curve curve = new();
@@ -580,7 +583,8 @@ namespace RatingAPI.Controllers
                 LackMapCalculation = lack,
                 Length = length,
                 Njs = map.BeatMap?._noteJumpMovementSpeed ?? 0,
-                PointList = pointList
+                PointList = pointList,
+                Breakdown = RatingBreakdown.Compute(ratings.SwingData, noteAccs, noteTimes, timescale),
             };
             return result;
         }
