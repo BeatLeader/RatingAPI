@@ -4,11 +4,11 @@
     // uses; portaBLe's formula sweeps (BalanceTuner.RunPpFormula) swap it temporarily to try other values.
     //   pass pp = PassScale * e^(PassInner * pass^(1/PassExponent)) - PassOffset   (0 when negative; above PassTopKnee
     //             each point counts PassTopSlope)
-    //   acc pp  = curve(acc) * AccWeight * accRating   (the map's own curve, Curve.GetCurve)
+    //   acc pp  = curve(acc) * AccWeight * accRating   (the map's own curve, Curve.GetCurve), x MidStarTopMultiplier in
+    //             scores (4-10.5 stars, from the predicted acc - 3%; not in stars)
     //   tech pp = e^(TechAccExponent * acc) * TechWeight * tech   (above TechTopKnee each point counts TechTopSlope)
     //   pp      = (pass + acc + tech) * PpMultiplier   (Scale)
     //   pp      = pp * (1 + LowStarBonus * (LowStarBonusEnd - stars)^LowStarBonusPower)   (only under LowStarBonusEnd stars)
-    //   pp      = pp * MidStarTopMultiplier   (4-11.5 stars, from the predicted acc - 3%, fading out at 600-700pp)
     //   stars   = final pp of a 96% score / PpMultiplier / StarDivisor, low star bonus included (StarsFromPp). PpMultiplier
     //             doesn't move stars. Linear: no power to look like prod's (stars were 1.1653 x (pp / 83.6925)^1.17507; the
     //             star thresholds below were converted from those, new = (old / 1.1653)^(1 / 1.17507) x 83.6925 / StarDivisor,
@@ -75,6 +75,9 @@
         // 1.0176 (1.0238 x 16447.2 / 16547.0) with the mid star top bonus (x1.035): the top 1000's average pp as before.
         // 1.0151 with the mid star top bonus x1.05 fading 600-700pp (emulated: the top 1000's average pp as with x1.035).
         // 1.0128 with its stars 4 -> 6 ... 9 -> 11.5 (emulated: the top 1000's average pp as with x1.035).
+        // Kept at 1.0128 with the mid star top bonus on acc pp only (stars 4 -> 6.4 ... 8 -> 10.5) and the Analyzer's tech
+        // scaler 6.0 / rotation 6.0^1.25 (the top 1000's average pp 16393, v3 16441): 1.0158 (v3's average) put Feral E+ and
+        // Unwelcome School (14+ stars, 96.9 / 96.3% BE) from 799 to 801-802pp.
         public double PpMultiplier { get; set; } = 1.0128;
 
         // Low star bonus: maps under LowStarBonusEnd stars pay more. Top players farm the easiest maps to 99%+, but stars are
@@ -88,12 +91,10 @@
         public double LowStarBonusPower { get; set; } = 1.98;
 
         // Mid star top bonus: a top 1000 player's best effort on a 7-9 star map paid too little to count among their top plays
-        // (a 98.5% on ABCD E+, 9.12 stars predicted 97.67%, ~709pp). pp x (1 + MidStarTopBonus x bump(stars) x ramp(acc) x
-        // fade(pp)): bump is 1 from MidStarTopFull to MidStarTopFullEnd stars, easing (smoothstep) to 0 at MidStarTopStart /
+        // (a 98.5% on ABCD E+, 9.12 stars predicted 97.67%, ~709pp). acc pp x (1 + MidStarTopBonus x bump(stars) x ramp(acc)):
+        // bump is 1 from MidStarTopFull to MidStarTopFullEnd stars, easing (smoothstep) to 0 at MidStarTopStart /
         // MidStarTopEnd; ramp eases from 0 at the map's predicted acc - MidStarTopAccBelow to 1 at its predicted acc +
-        // MidStarTopAccAbove; the bonus then fades linearly from the score's pp (before it) MidStarTopFadeStart to 0 at
-        // MidStarTopFadeEnd, so it never pushes a score to MidStarTopFadeEnd (700pp only from a score that gets there on its
-        // own) and pp still rises with acc. Stars and the acc ratings don't move. stars and predicted acc: those of the
+        // MidStarTopAccAbove and stays 1 above. Stars and the acc ratings don't move. stars and predicted acc: those of the
         // version played (a speed modifier's own), like the low star bonus. 0 = off.
         // A ramp from predicted - 0.25% to + 0.75% only paid the top 100 (+0.5-0.85% on their 6-10.5 star plays, ranks
         // 101-1000 +0.02%) and made 31 plays 800+ (4 before); x0.07 from predicted - 1.5% moved players with mostly mid star
@@ -112,29 +113,33 @@
         // 5-6). End: with the pp fade already cutting the bonus at 9.5+ stars (par scores over 600pp), the fade-out over one
         // star made 10-10.5 star maps pay less than 9.5-10 (the top 100's pp at the predicted acc 636 -> 634, ranks 101-1000's
         // 600+ 3.5 -> 2.8%); now rising at every half star (629, 635, 641, 650 at 9-10.5).
+        // Acc pp only (was the whole pp, fading out from 600 to 700pp before it): the fade flattened the pp curve around 650pp
+        // (x1.05 at 600pp, x1 at 700), then it rose again, a bump. Now the bonus stays on up to 100%, so the curve keeps its
+        // shape, and the star range ends lower so it makes no new 800pp play: x1.05 (about x1.044 on the whole pp at the
+        // predicted acc, acc pp ~88% of it) full on 6.38-8 stars, out at 10.5 (9-9.5+ star maps already have 760-790pp plays).
+        // Emulated on the Tech 6 DB (plain / reweighted): no new 800pp play (top bonus map play 793 / 795), the top 100's
+        // weighted pp on 7-9.5 stars 10.6 -> 13.1% (no bonus 7.1%), the top 1000's average pp -0.8% (the bonus no longer
+        // lifts the pass and tech pp of ranks 101-1000's plays).
         public double MidStarTopBonus { get; set; } = 0.05;
         public double MidStarTopStart { get; set; } = 4.2508;
         public double MidStarTopFull { get; set; } = 6.3762;
-        public double MidStarTopFullEnd { get; set; } = 9.5642;
-        public double MidStarTopEnd { get; set; } = 12.221;
+        public double MidStarTopFullEnd { get; set; } = 8.0;
+        public double MidStarTopEnd { get; set; } = 10.5;
         public double MidStarTopAccBelow { get; set; } = 0.03;
         public double MidStarTopAccAbove { get; set; } = 0;
-        public double MidStarTopFadeStart { get; set; } = 600;
-        public double MidStarTopFadeEnd { get; set; } = 700;
 
         public static PpFormula Current { get; set; } = new();
 
-        // pp: the score's pp before the bonus
-        public float MidStarTopMultiplier(float stars, float accuracy, float predictedAcc, float pp)
+        // The acc pp multiplier
+        public float MidStarTopMultiplier(float stars, float accuracy, float predictedAcc)
         {
-            if (MidStarTopBonus == 0 || !(predictedAcc > 0) || !(pp < MidStarTopFadeEnd)) return 1;
+            if (MidStarTopBonus == 0 || !(predictedAcc > 0)) return 1;
             double from = predictedAcc - MidStarTopAccBelow;
             if (!(accuracy > from)) return 1;
             double bump = MidStarTopBump(stars);
             if (bump == 0) return 1;
             double ramp = Ease((accuracy - from) / (MidStarTopAccBelow + MidStarTopAccAbove));
-            double fade = Math.Clamp((MidStarTopFadeEnd - pp) / (MidStarTopFadeEnd - MidStarTopFadeStart), 0, 1);
-            return 1 + (float)(MidStarTopBonus * bump * ramp * fade);
+            return 1 + (float)(MidStarTopBonus * bump * ramp);
         }
 
         private double MidStarTopBump(float stars)
@@ -284,6 +289,6 @@
         public float Scale(float pp) => (float)PpMultiplier * pp;
 
         public override string ToString() => FormattableString.Invariant(
-            $"pass {PassScale}*e^({PassInner}*p^(1/{PassExponent}))-{PassOffset} (x{PassTopSlope} above {PassTopKnee}), acc x{AccWeight}*a, tech e^({TechAccExponent}a)*{TechWeight}*t (x{TechTopSlope} above {TechTopKnee}), x{PpMultiplier}, stars pp/{StarDivisor}, low star bonus {LowStarBonus}*({LowStarBonusEnd}-stars)^{LowStarBonusPower}, mid star top bonus {MidStarTopBonus} ({MidStarTopStart}-{MidStarTopFull}-{MidStarTopFullEnd}-{MidStarTopEnd} stars, predicted -{MidStarTopAccBelow} to +{MidStarTopAccAbove} acc, fading {MidStarTopFadeStart}-{MidStarTopFadeEnd}pp)");
+            $"pass {PassScale}*e^({PassInner}*p^(1/{PassExponent}))-{PassOffset} (x{PassTopSlope} above {PassTopKnee}), acc x{AccWeight}*a, tech e^({TechAccExponent}a)*{TechWeight}*t (x{TechTopSlope} above {TechTopKnee}), x{PpMultiplier}, stars pp/{StarDivisor}, low star bonus {LowStarBonus}*({LowStarBonusEnd}-stars)^{LowStarBonusPower}, mid star top bonus {MidStarTopBonus} ({MidStarTopStart}-{MidStarTopFull}-{MidStarTopFullEnd}-{MidStarTopEnd} stars, predicted -{MidStarTopAccBelow} to +{MidStarTopAccAbove} acc, acc pp)");
     }
 }
