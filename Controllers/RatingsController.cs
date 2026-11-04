@@ -40,6 +40,9 @@ namespace RatingAPI.Controllers
         // (CurveSettings.ShortFactor; 0 = unknown)
         [JsonPropertyName("note_span")]
         public double NoteSpan { get; set; } = 0;
+        // Analyzer Ratings.PeakSustainedEBPM
+        [JsonPropertyName("peak_ebpm")]
+        public double PeakEbpm { get; set; } = 0;
         [JsonPropertyName("statistics")]
         public Statistics Statistics { get; set; } = new Statistics();
     }
@@ -560,6 +563,7 @@ namespace RatingAPI.Controllers
                 HardSwingRatio = ratings.HardSwingRatio,
                 NoteCount = mapdata.Notes.Count,
                 NoteSpan = NoteSpan(mapdata, timescale),
+                PeakEbpm = ratings.PeakSustainedEBPM,
             };
 
             var start = map.Data.Notes.OrderBy(x => x.Seconds).FirstOrDefault()?.Seconds ?? 9999;
