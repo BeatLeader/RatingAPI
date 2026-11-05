@@ -40,6 +40,9 @@ namespace RatingAPI.Controllers
         // (CurveSettings.ShortFactor; 0 = unknown)
         [JsonPropertyName("note_span")]
         public double NoteSpan { get; set; } = 0;
+        // Analyzer Ratings.PeakSustainedEBPM
+        [JsonPropertyName("peak_ebpm")]
+        public double PeakEbpm { get; set; } = 0;
         [JsonPropertyName("statistics")]
         public Statistics Statistics { get; set; } = new Statistics();
     }
@@ -62,6 +65,9 @@ namespace RatingAPI.Controllers
         // Base NJS of the difficulty from Info.dat (the speed modifier isn't applied)
         [JsonPropertyName("njs")]
         public float Njs { get; set; } = 0;
+        // Speed / tech / acc over time, from the same swings and note predictions (RatingBreakdown)
+        [JsonPropertyName("breakdown")]
+        public RatingBreakdown? Breakdown { get; set; }
     }
 
     public class Point
@@ -205,7 +211,9 @@ namespace RatingAPI.Controllers
                     }
                     results[name] = GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, timescale, njsMult);
                 }
+                UseNomodHighPass(results);
                 BlendLowNoteSpeeds(results);
+                BlendLowStarSpeeds(results);
             }
             _logger.LogWarning("Took " + sw.ElapsedMilliseconds);
 
@@ -238,6 +246,8 @@ namespace RatingAPI.Controllers
                 {
                     results[name] = GetBLRatings(map, mode, difficulty, mapset.Info._beatsPerMinute, timescale);
                 }
+                UseNomodHighPass(results);
+                BlendLowStarSpeeds(results);
             }
             _logger.LogWarning("Took " + sw.ElapsedMilliseconds);
 
@@ -439,6 +449,23 @@ namespace RatingAPI.Controllers
             };
         }
 
+        // Every speed modifier's acc rating again with the nomod pass rating in its high pass correction and buff
+        // (AccRating.EffectiveAcc), and its stars, when AccRating.SpeedHighPassFromNomod is on. Needs the nomod ratings
+        // ("none"); before BlendLowNoteSpeeds.
+        public static void UseNomodHighPass(Dictionary<string, RatingResult> results)
+        {
+            if (!AccRating.SpeedHighPassFromNomod || !results.TryGetValue("none", out var nomod)) return;
+            double nomodPass = nomod.LackMapCalculation.PassRating;
+            var ar = new AccRating();
+            foreach (var (name, result) in results)
+            {
+                if (name == "none" || !(result.PredictedAcc > 0)) continue;
+                var lack = result.LackMapCalculation;
+                result.AccRating = ar.GetRating(result.PredictedAcc, lack.PassRating, lack.TechRating, lack.HitDistance, lack.HardSwingRatio, nomodPass);
+                result.Stars = Pp.PpCalculator.ToStars((float)result.AccRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(result.PointList), (float)result.PredictedAcc);
+            }
+        }
+
         // The low note speed blend (CurveSettings.LowNoteSpeedBlend) on every speed modifier's pass, tech and acc ratings, and
         // their stars again. Needs the nomod ratings ("none").
         public static void BlendLowNoteSpeeds(Dictionary<string, RatingResult> results)
@@ -454,7 +481,61 @@ namespace RatingAPI.Controllers
                 lack.PassRating = settings.LowNoteSpeedBlend(nomod.LackMapCalculation.PassRating, lack.PassRating, notes);
                 lack.TechRating = settings.LowNoteSpeedBlend(nomod.LackMapCalculation.TechRating, lack.TechRating, notes);
                 result.AccRating = settings.LowNoteSpeedBlend(nomod.AccRating, result.AccRating, notes);
-                result.Stars = Pp.PpCalculator.ToStars((float)result.AccRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(result.PointList));
+                result.Stars = Pp.PpCalculator.ToStars((float)result.AccRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(result.PointList), (float)result.PredictedAcc);
+            }
+        }
+
+        // Low star speed blend: on low and mid star maps, the speed-up modifiers' (FS, SFS, BFS, BSF) predicted acc, pass and
+        // tech are blended toward nomod's, and their acc rating, curve and stars computed again from them, so they pay less
+        // at every accuracy. Top players beat nomod scores with speed modifiers there: the top 300 score 0.5% higher with FS
+        // than without on 2-3.5 star maps, and on Burn Expert+ (6.5 stars) an FS 98.68% paid 42pp more than a nomod 98.82%.
+        // Share of the speed modifier's difference from nomod kept, by the map's nomod stars: a sigmoid between
+        // LowStarSpeedMinShare and LowStarSpeedMaxShare,
+        //   min + (max - min) / (1 + e^-((stars - LowStarSpeedMidStars) / width))
+        // with width LowStarSpeedWidth under LowStarSpeedMidStars and LowStarSpeedWidthAbove over it (both halves meet at
+        // the middle share; a smaller LowStarSpeedWidthAbove reaches LowStarSpeedMaxShare sooner over the middle)
+        // so the nerf goes from 85% on the lowest maps (21% kept at 2.5 stars, 32% at 4) to 15% on the hardest (66% kept at
+        // 6 stars, 80% at 7, 84% at 8, 85% from 10), half at LowStarSpeedMidStars. (Was 0 to 1: a full nerf on the lowest maps,
+        // none on the hardest.) Widths: stars per e-fold, smaller = sharper. Settable for experiments (portaBLe rerate
+        // Speed.LowStarSpeedMidStars=7); change the defaults here.
+        // Middle 5.4 (was 6) and LowStarSpeedWidthAbove 0.6 (was the same 1.2 on both sides), on StarDivisor 48.61: the nerf
+        // over 6 stars was too strong (SF scores of 8-11 stars -7 to -5% under others of their stars, now -5.4 to -4.3%), and
+        // El Lapiz's SF 99.27% on Falling Easy (4.48 stars) is the map's top score by a little (689.8pp vs Huskei's nomod 99.36%
+        // 688.1; it was third, 684.6). FS over 7 stars +0.7 to +1.7%; Bizzy825's FS on Burn Expert+ 762 vs Kira's nomod 741.
+        // Those were 5.4 / 1.2 / 0.6 on StarDivisor 48.61; now x 48.61 / 52 (the same shares).
+        public static double LowStarSpeedMidStars { get; set; } = 5.048;
+        public static double LowStarSpeedWidth { get; set; } = 1.1218;
+        public static double LowStarSpeedWidthAbove { get; set; } = 0.5609;
+        public static double LowStarSpeedMinShare { get; set; } = 0.15;
+        public static double LowStarSpeedMaxShare { get; set; } = 1;
+
+        // The share of a speed modifier's difference from nomod kept on a map with these nomod stars
+        public static double LowStarSpeedShare(double nomodStars)
+        {
+            double width = nomodStars < LowStarSpeedMidStars ? LowStarSpeedWidth : LowStarSpeedWidthAbove;
+            return LowStarSpeedMinShare + (LowStarSpeedMaxShare - LowStarSpeedMinShare) / (1 + Math.Exp(-(nomodStars - LowStarSpeedMidStars) / width));
+        }
+
+        // The low star speed blend on every speed-up modifier. Needs the nomod ratings ("none"); after BlendLowNoteSpeeds.
+        public static void BlendLowStarSpeeds(Dictionary<string, RatingResult> results)
+        {
+            if (!results.TryGetValue("none", out var nomod) || !(nomod.PredictedAcc > 0)) return;
+            double share = LowStarSpeedShare(nomod.Stars);
+            if (share >= 1) return;
+            var ar = new AccRating();
+            var curve = new Curve();
+            var nomodLack = nomod.LackMapCalculation;
+            foreach (var (name, result) in results)
+            {
+                if (name is not ("FS" or "SFS" or "BFS" or "BSF") || !(result.PredictedAcc > 0)) continue;
+                var lack = result.LackMapCalculation;
+                result.PredictedAcc = nomod.PredictedAcc + share * (result.PredictedAcc - nomod.PredictedAcc);
+                lack.PassRating = nomodLack.PassRating + share * (lack.PassRating - nomodLack.PassRating);
+                lack.TechRating = nomodLack.TechRating + share * (lack.TechRating - nomodLack.TechRating);
+                result.AccRating = ar.GetRating(result.PredictedAcc, lack.PassRating, lack.TechRating, lack.HitDistance, lack.HardSwingRatio,
+                    AccRating.SpeedHighPassFromNomod ? nomodLack.PassRating : null);
+                result.PointList = curve.GetCurve(lack, result.PredictedAcc);
+                result.Stars = Pp.PpCalculator.ToStars((float)result.AccRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(result.PointList), (float)result.PredictedAcc);
             }
         }
 
@@ -482,6 +563,7 @@ namespace RatingAPI.Controllers
                 HardSwingRatio = ratings.HardSwingRatio,
                 NoteCount = mapdata.Notes.Count,
                 NoteSpan = NoteSpan(mapdata, timescale),
+                PeakEbpm = ratings.PeakSustainedEBPM,
             };
 
             var start = map.Data.Notes.OrderBy(x => x.Seconds).FirstOrDefault()?.Seconds ?? 9999;
@@ -491,7 +573,7 @@ namespace RatingAPI.Controllers
             var length = end - start;
             if (start == 9999 || end == 0) length = 0;
 
-            var predictedAcc = ai.GetAIAcc(mapdata, bpm, timescale, njsMult);
+            var (predictedAcc, noteAccs, noteTimes) = ai.GetAIAccAndHits(mapdata, bpm, timescale, njsMult);
             AccRating ar = new();
             var accRating = ar.GetRating(predictedAcc, ratings.PassRating, ratings.TechRating, ratings.HitDistance, ratings.HardSwingRatio);
             Curve curve = new();
@@ -499,13 +581,14 @@ namespace RatingAPI.Controllers
             var pointList = curve.GetCurve(lack, predictedAcc);
             RatingResult result = new()
             {
+                Stars = Pp.PpCalculator.ToStars((float)accRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(pointList), (float)predictedAcc),
                 PredictedAcc = predictedAcc,
                 AccRating = accRating,
                 LackMapCalculation = lack,
-                PointList = pointList,
-                Stars = Pp.PpCalculator.ToStars((float)accRating, (float)lack.PassRating, (float)lack.TechRating, Pp.PpCalculator.ToCurve(pointList)),
                 Length = length,
-                Njs = map.BeatMap?._noteJumpMovementSpeed ?? 0
+                Njs = map.BeatMap?._noteJumpMovementSpeed ?? 0,
+                PointList = pointList,
+                Breakdown = RatingBreakdown.Compute(ratings.SwingData, noteAccs, noteTimes, timescale),
             };
             return result;
         }

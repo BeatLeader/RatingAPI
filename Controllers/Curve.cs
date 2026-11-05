@@ -2,19 +2,20 @@
 {
     public class Curve
     {
-        // The base acc curve (Pp.PpCalculator.CurveValue): acc pp = curve(acc) * AccWeight * acc rating^AccRatingPower
+        // The base acc curve (Pp.PpCalculator.CurveValue): acc pp = curve(acc) * AccWeight * acc rating
         public List<(double x, double y)> baseCurve = BaseTable.ToList();
 
-        // Low acc lift (24 Oct): +20% up to 80%, fading to 0 at 92% (0.91: x1.017 ... 0.85: x1.117, 0.825: x1.158; 0.6-0.8
-        // were 0.256, 0.296, 0.345, 0.404, 0.473, then 0.522, 0.581, 0.650, 0.729, 0.768). Maps players score low on were worth
-        // less for them than their other maps: Extratongue / 999 ExpertPlus had 46% / 52% of the top 5000's scores at
-        // 70-85% (11-13 star maps 20%), worth -0.176 / -0.150 (Dev, no acc reweight). Stars (a 96% score) and acc ratings
-        // (the curve at the effective acc, 95%+) don't move. Simulated (simplified PlayerAdjusted fit, Dev): worth spread
-        // 0.048 -> 0.041, maps above +0.08 132 -> 75, below -0.05 497 -> 377, those four +2.2% to +2.5%, Chrome Vox
-        // ExpertPlus +3.1%.
+        // Lifted at low acc (+20% up to 80%, fading to 0 at 92%): maps players score low on were worth less for them than
+        // their other maps. Stars (a 96% score) and acc ratings (the curve at the effective acc, 95%+) don't move.
+        // 100% at 7.2 (was 7.424): the last step was 1.64x the one before it, a slope jump of x1.33 at 99.9% in every curve.
+        // 90-95% steeper ("Dev Acc Steeper 90-95" DBs), with a rising growth per 1% acc (4.5, 5.8, 7.0, 7.6, 8.0%: up to
+        // 95-95.5%'s 8.0%) instead of the jump from 4.1% to 6.6% at 92% where the lift ended; 95% stays at 1, everything
+        // under 90% x0.966 (the lift's shape kept). Stars and acc ratings don't move; top 1000 players' pp -0.2%. Before:
+        //   (0.94, 0.931), (0.93, 0.867), (0.92, 0.813), (0.91, 0.781), (0.9, 0.753), (0.875, 0.699), (0.85, 0.649),
+        //   (0.825, 0.605), (0.8, 0.568), (0.75, 0.485), (0.7, 0.414), (0.65, 0.355), (0.6, 0.307)
         public static readonly (double x, double y)[] BaseTable =
         {
-                (1.0, 7.424),
+                (1.0, 7.2),
                 (0.999, 6.241),
                 (0.9975, 5.158),
                 (0.995, 4.010),
@@ -32,19 +33,19 @@
                 (0.96, 1.094),
                 (0.955, 1.039),
                 (0.95, 1.000),
-                (0.94, 0.931),
-                (0.93, 0.867),
-                (0.92, 0.813),
-                (0.91, 0.781),
-                (0.9, 0.753),
-                (0.875, 0.699),
-                (0.85, 0.649),
-                (0.825, 0.605),
-                (0.8, 0.568),
-                (0.75, 0.485),
-                (0.7, 0.414),
-                (0.65, 0.355),
-                (0.6, 0.307),
+                (0.94, 0.926),
+                (0.93, 0.861),
+                (0.92, 0.804),
+                (0.91, 0.760),
+                (0.9, 0.727),
+                (0.875, 0.675),
+                (0.85, 0.627),
+                (0.825, 0.584),
+                (0.8, 0.549),
+                (0.75, 0.469),
+                (0.7, 0.400),
+                (0.65, 0.343),
+                (0.6, 0.297),
                 (0.0, 0.000)
         };
 
@@ -61,15 +62,14 @@
         // - above A, the high-pass extension L(x) leaves A with the curve's slope there, which then keeps growing (C < 0,
         //   still exponential) or fades (0 < C <= 1; 0 = straight line).
         // The parameters only act relative to the default ModifiableCurve: value = base table(x) * modified(x) / default(x)
-        // (the table interpolated smoothly, SmoothBaseValue),
-        // so default parameters give exactly today's curve (the default ModifiableCurve is 3-6% above the table at 97-99.9%,
-        // using it directly would raise most acc pp). Never above the base curve. Only map data is used, never scores.
+        // (the table interpolated smoothly, SmoothBaseValue), so default parameters give exactly the base curve (the default
+        // ModifiableCurve itself is 3-6% above the table at 97-99.9%). Above A, table / default is held at its value and
+        // slope at A, so the top follows A and C only (PerMapValue). Never above the base curve. Only map data is used.
         public List<Point> GetCurve(LackMapCalculation lackRatings, double predictedAcc)
         {
             var curves = PerMapCurves(predictedAcc);
             double tilt = SliderTilt(lackRatings, predictedAcc);
             var settings = CurveSettings.Current;
-            // The low note and length nerf (LowNoteMultiplier): the whole curve
             double nerf = settings.LowNoteMultiplier(lackRatings.NoteCount, lackRatings.NoteSpan);
             if (curves == null && tilt == 0)
             {
@@ -114,15 +114,15 @@
         }
 
         // Value of the per-map curve (GetCurve above) at acc, computed directly instead of from the sampled points.
-        // Used by the acc rating (AccRating.Curve).
-        public static double PerMapValue(double predictedAcc, double acc)
+        // Used by the acc rating (AccRating.Curve). forRating: with the rows' RatingC instead of C (see CurveRow.RatingC).
+        public static double PerMapValue(double predictedAcc, double acc, bool forRating = false)
         {
-            var curves = PerMapCurves(predictedAcc);
+            var curves = PerMapCurves(predictedAcc, forRating);
             return curves == null ? BaseValue(acc) : PerMapValue(curves.Value, acc);
         }
 
-        // The modified and default ModifiableCurve of a map, null when it gets the base curve
-        private static (ModifiableCurve modified, ModifiableCurve standard)? PerMapCurves(double predictedAcc)
+        // The modified and default ModifiableCurve of a map, null when it gets the base curve. forRating: see PerMapValue.
+        private static (ModifiableCurve modified, ModifiableCurve standard)? PerMapCurves(double predictedAcc, bool forRating = false)
         {
             var settings = CurveSettings.Current;
             if (!settings.Enabled || predictedAcc <= 0.6 || predictedAcc >= 0.9995)
@@ -135,18 +135,40 @@
                 return null;
             }
             double a = Math.Min(Math.Max(row.A, 0.951), 1.0);
-            return (new ModifiableCurve { A = a, C = row.C, K = row.K, W = row.W, K2 = row.K2, P2 = row.P2 }, new ModifiableCurve());
+            double c = forRating ? row.RatingC ?? row.C : row.C;
+            return (new ModifiableCurve { A = a, C = c, K = row.K, W = row.W, K2 = row.K2, P2 = row.P2 }, new ModifiableCurve());
         }
 
-        // The base it scales is SmoothBaseValue: with the linear table the slope jumped up at every table point and fell inside
-        // each segment (the ratio falls with acc), so per-map curves were bumpy above ~98.5% (99.3-99.55% at 97% predicted:
-        // 0.10, 0.07, 0.12 per 0.05%). Same values at the table points (96% included), up to 1.34% lower between them.
+        // The base it scales is SmoothBaseValue: the linear table's slope jumps at every table point, which made per-map
+        // curves bumpy above ~98.5%. Same values at the table points (96% included), up to 1.34% lower between them.
+        // value = modified(x) x TableFactor(x), the table over the default ModifiableCurve. Above A, TableFactor is held at
+        // its value at A, continued with its slope there (TopTableFactor): the table's last steps (99.75%, 99.9%, 100%) are
+        // steeper than the default ModifiableCurve, so TableFactor sags to 0.930 at 99.7% and climbs back to 0.970 at 100%,
+        // which made every top (meant as a straight line for C 0, or a smooth taper) flatten up to ~99.75% and bend up to 100%.
         private static double PerMapValue((ModifiableCurve modified, ModifiableCurve standard) curves, double x)
         {
             double baseValue = SmoothBaseValue(x);
-            double reference = curves.standard.GetValue(x);
-            double value = reference > 0 ? baseValue * curves.modified.GetValue(x) / reference : baseValue;
+            double a = curves.modified.A;
+            double factor = a < 0.9995 && x > a ? TopTableFactor(curves.standard, a, x) : TableFactor(curves.standard, x);
+            double value = factor > 0 ? curves.modified.GetValue(x) * factor : baseValue;
             return Math.Min(baseValue, value);
+        }
+
+        // The table over the default ModifiableCurve at x (0 where the default curve is 0)
+        private static double TableFactor(ModifiableCurve standard, double x)
+        {
+            double reference = standard.GetValue(x);
+            return reference > 0 ? SmoothBaseValue(x) / reference : 0;
+        }
+
+        // TableFactor above A: its value at A plus its slope there (from just under A) times the distance to A, so the curve
+        // keeps the same value and slope at A
+        private static double TopTableFactor(ModifiableCurve standard, double a, double x)
+        {
+            const double h = 1e-5;
+            double atA = TableFactor(standard, a);
+            double slope = (atA - TableFactor(standard, a - h)) / h;
+            return atA + slope * (x - a);
         }
 
         public static double BaseValue(double acc)
@@ -288,6 +310,9 @@
         public double W { get; set; } = 0.6;
         public double K2 { get; set; } = 2.88;
         public double P2 { get; set; } = 2.46;
+        // The C the acc rating reads (AccRating.Curve, at the predicted acc), null: C. Lets a row flatten its curve above A
+        // for scores without raising the acc rating of maps predicted above A (curve^-0.8222 there).
+        public double? RatingC { get; set; }
 
         // A at 100% and the default shape: the base curve
         public bool IsDefault => A >= 0.9995 && K == 4.86 && W == 0.6 && K2 == 2.88 && P2 == 2.46;
@@ -295,16 +320,21 @@
 
     // Settings of the per-map curves (Curve.GetCurve): ModifiableCurve parameters by predicted acc, linearly interpolated
     // between the rows; the first / last row applies below / above them.
-    // Goals (Loloppe): 1. 9-12* maps (predicted 96-97.5%) gave too much for scores about +1% above the predicted acc
-    // (the 800pp+ plays): K, W, K2, P2 reshape the curve around 96%, back to the default at 95.5% and from 97%.
-    // 2. true acc (<2*) and acc maps (<5*) gave too much for tiny jumps around 99%: less steep there, hugging the base
-    // curve more tightly while cutting the extreme tail, without nerfing the overall amount.
-    // The 99.5% row isn't from the first values: without it the 99% row also applied above 99%, which cut the curve value
-    // at the predicted acc of <2* maps by 19%; with it, by 6%.
-    // Table values updated 2026-10-16 (A, C and the shape K, W, K2, P2 on every row; the 96-97.5% rows now ease back to the
-    // default shape by 97.5-98.5% instead of 97%). The simulation below is for the previous table.
-    // Simulated on all ranked scores (without the 99.5% row): scores above 800pp 246 -> 31, #1 vs #2 on the top maps +7.7%
-    // -> +5.1%, the #1 player -7%, the top 100 -1.4%, map worth unchanged from 96.5% to 99% predicted acc.
+    // 1. 9-12* maps (predicted 96-97.5%) gave too much for scores about +1% above the predicted acc: K, W, K2, P2 reshape
+    // the curve around 96%, easing back to the default shape by 97.5-98.5%.
+    // 2. True acc (<2*) and acc maps (<5*) gave too much for tiny jumps around 99%: less steep there, hugging the base curve
+    // while cutting the extreme tail. The 99.5% row keeps the 99% row from applying above 99%, which would cut the curve
+    // at <2* maps' predicted acc far more.
+    // 3. The 99% and 99.5% rows' C (0: a straight line above 99%) flattens their curve's top, which PpFormula's acc top
+    // compression (x0.8 above 99% on every map) did before. Their RatingC keeps the acc rating on the old top (C -1.2):
+    // read at the predicted acc, the flatter top raised the acc rating of maps predicted above 99% by up to x1.10, and the
+    // easiest acc maps' 99.5%+ scores with it.
+    // 4. The 0.975 and 0.980 rows (7-8 star maps and speed versions rated there) start their top at 98.3% instead of 98.5%,
+    // as a straight line (C 0): the old mid star top bonus (PpFormula.MidStarTopBonus x1.04 from 96% acc, since reworked) pushed their 98.7%+ scores past 800pp
+    // (Let Mom Sleep Hard SF 834). The acc rating reads the same curve: unchanged up to ~98.1% predicted acc (it reads the
+    // curve at the predicted acc + ACC_OFFSET, under A), slightly higher (up to x1.003) at 98.2-98.8%, where it reads the
+    // new top. The 0.985 row's C -1.2 -> -0.6 (between its neighbours' 0): at -1.2, maps predicted 98.3-98.5% paid more for
+    // 99.75-100% (relative to a score at their predicted acc) than the harder 98% maps next to them.
     public class CurveSettings
     {
         public bool Enabled { get; set; } = true;
@@ -315,19 +345,18 @@
             new CurveRow { PredictedAcc = 0.960, A = 0.99,    C = -3.00, K = 4.30, W = 0.66, K2 = 4.80, P2 = 1.85 },
             new CurveRow { PredictedAcc = 0.965, A = 0.988,   C = -2.40, K = 4.50, W = 0.64, K2 = 4.50, P2 = 1.95 },
             new CurveRow { PredictedAcc = 0.970, A = 0.986,   C = -2.20, K = 4.70, W = 0.62, K2 = 4.20, P2 = 2.05 },
-            new CurveRow { PredictedAcc = 0.975, A = 0.985,   C = -1.80, K = 4.86, W = 0.60, K2 = 3.80, P2 = 2.15 },
-            new CurveRow { PredictedAcc = 0.980, A = 0.985,   C = -1.40, K = 4.86, W = 0.60, K2 = 3.35, P2 = 2.30 },
-            new CurveRow { PredictedAcc = 0.985, A = 0.985,   C = -1.20, K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46 },
-            new CurveRow { PredictedAcc = 0.990, A = 0.9915,  C = -1.20, K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46 },
-            new CurveRow { PredictedAcc = 0.995, A = 0.9915,  C = -1.20, K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46 },
+            new CurveRow { PredictedAcc = 0.975, A = 0.983,   C = 0.00,  K = 4.86, W = 0.60, K2 = 3.80, P2 = 2.15 },
+            new CurveRow { PredictedAcc = 0.980, A = 0.983,   C = 0.00,  K = 4.86, W = 0.60, K2 = 3.35, P2 = 2.30 },
+            new CurveRow { PredictedAcc = 0.985, A = 0.985,   C = -0.60, K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46 },
+            new CurveRow { PredictedAcc = 0.990, A = 0.99,    C = 0.00,  K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46, RatingC = -1.20 },
+            new CurveRow { PredictedAcc = 0.995, A = 0.99,    C = 0.00,  K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46, RatingC = -1.20 },
         };
 
         // C never goes above 1 (the curve would go down)
         public double MaxC { get; set; } = 1;
 
-        // Slider tilt: maps with many sliders (and curved sliders) were worth more than others of their stars (Megametric75
-        // +0.17 for the 10% with the most, +0.48 for the top 3%; You Are Mine Normal, 49% sliders, +2.6), while their top
-        // scores sit as close to the predicted acc as on other maps (~0.5% under). Their curve is multiplied by
+        // Slider tilt: maps with many sliders (and curved sliders) were worth more than others of their stars, while their
+        // top scores sit as close to the predicted acc as on other maps. Their curve is multiplied by
         // e^(SliderTilt x slider share x (acc - predicted acc) in %), up to SliderTiltRange from the predicted acc: higher
         // above it, lower under it, unchanged at it (the acc rating doesn't use it; the stars do, as scores at 96%). 0 = off.
         public double SliderTilt { get; set; } = 0.2;
@@ -338,26 +367,20 @@
         // at most: one of them nerfs a bit, both nerf more, nothing is buffed. Speed modifiers don't raise low note maps'
         // ratings (LowNoteSpeedBlend), and their shorter real time makes the ShortFactor stronger. Pass and tech pp aren't
         // nerfed.
-        // Before (24-25 Oct) the notes' nerf was times a span factor (0 at 75 s, up to 1.5 under 18 s) and maps past 75 s
-        // got a length bonus up to +10%: RTX 20000 Easy (20 notes over 111 s) x1.055, a short map with 115+ notes x1, so
-        // neither alone nerfed and length buffed. Notes at most x0.95 (x0.9 at 20 notes put Quiet Water Easy's 100% at
-        // 559pp). Length at most x0.9, at 12 s: capped at x0.95 at 18 s, Quiet Water Easy (18 s) had its nomod, FS and SF
-        // at the cap, so FS and SF paid more than nomod (the speed blend keeps a little of their rating), and a 5% length
-        // nerf couldn't put RTX 20000 Easy (111 s, acc rating 2.97) over it (3.13: 6.6% more at 100% before the nerf). Now
-        // 100% on Quiet Water Easy: SS 609, nomod 604 (x0.876), FS 598, SF 591 (x0.855); RTX 20000 Easy 614 (x0.95, was
-        // x1.055). A 45 s map with 400 notes x0.972 (was x1), with SF x0.95. Dev (26 Oct), from the 5% length cap: stars
-        // of the short maps x0.994, of the short low note ones x0.982; the rest and the top 1000 unchanged.
         // Notes: 1 - (1 - LowNoteRefMultiplier) x ln(LowNoteStart / notes) / ln(LowNoteStart / LowNoteRefNotes), at least
         // LowNoteMinMultiplier, under LowNoteStart color notes (LackMapCalculation.NoteCount; 0 = unknown: 1). LowNoteStart
         // 0 = off.
         public double LowNoteStart { get; set; } = 115;
         public double LowNoteRefNotes { get; set; } = 20;
-        public double LowNoteRefMultiplier { get; set; } = 0.95;
-        public double LowNoteMinMultiplier { get; set; } = 0.95;
+        // 0.9654: Quiet Water Easy (20 notes, 18 s) pays 600pp for a 100% (99%+ rows' C 0 and RatingC -1.2, base 100% at 7.2).
+        // 0.8031: 500pp (586 with 0.9654 on StarDivisor 55.26; the map's stars 2.29 -> about 1.95, so its low star bonus rises).
+        public double LowNoteRefMultiplier { get; set; } = 0.8031;
+        public double LowNoteMinMultiplier { get; set; } = 0.8031;
         // Length: 1 - (1 - ShortRefMultiplier) x ln(ShortStart / span) / ln(ShortStart / ShortRefSpan), at least
-        // ShortMinMultiplier, under ShortStart seconds (12 s: SF on an 18 s map, so the speeds stay apart above it). The span is the first to the last color note in real time (song time /
-        // the speed modifier's, LackMapCalculation.NoteSpan; 0 = unknown: 1), so FS and SF, shorter grinds, are nerfed more
-        // and SS less. 4% of ranked maps are under 75 s nomod (median 177 s), 6% with FS, 11% with SF. ShortStart 0 = off.
+        // ShortMinMultiplier, under ShortStart seconds (ShortRefSpan 12 s: SF on an 18 s map, so the speeds stay apart above
+        // it). The span is the first to the last color note in real time (song time / the speed modifier's,
+        // LackMapCalculation.NoteSpan; 0 = unknown: 1), so FS and SF, shorter grinds, are nerfed more and SS less.
+        // ShortStart 0 = off.
         public double ShortStart { get; set; } = 75;
         public double ShortRefSpan { get; set; } = 12;
         public double ShortRefMultiplier { get; set; } = 0.9;
@@ -383,10 +406,9 @@
 
         // Low note speed blend: under LowNoteStart color notes, a speed modifier's pass, tech and acc ratings keep (notes /
         // LowNoteStart)^2 of their difference to the nomod ones (RatingsController.BlendLowNoteSpeeds, RatingsRefresh.Refresh):
-        // speed makes these maps faster to grind, not harder, so it shouldn't raise their ratings (Quiet Water Easy's SF acc
-        // rating was 7.6% over its nomod one), and the ShortFactor then gives the faster modifiers less. With the square,
-        // 47 notes keep 17% (notes / LowNoteStart: 41%, and SF still paid more than nomod there). notes: color notes (0 =
-        // unknown: unchanged).
+        // speed makes these maps faster to grind, not harder, so it shouldn't raise their ratings, and the ShortFactor then
+        // gives the faster modifiers less. Squared so SF doesn't still pay more than nomod. notes: color notes (0 = unknown:
+        // unchanged).
         public double LowNoteSpeedBlend(double nomod, double modifier, int notes)
         {
             if (notes <= 0 || LowNoteStart <= 0 || notes >= LowNoteStart) return modifier;
@@ -398,7 +420,8 @@
         {
             var rows = Table.OrderBy(r => r.PredictedAcc).ToList();
             if (rows.Count == 0) return new CurveRow { PredictedAcc = predictedAcc };
-            CurveRow Clamp(CurveRow r) => new CurveRow { PredictedAcc = predictedAcc, A = r.A, C = Math.Min(r.C, MaxC), K = r.K, W = r.W, K2 = r.K2, P2 = r.P2 };
+            CurveRow Clamp(CurveRow r) => new CurveRow { PredictedAcc = predictedAcc, A = r.A, C = Math.Min(r.C, MaxC), K = r.K, W = r.W, K2 = r.K2, P2 = r.P2,
+                RatingC = Math.Min(r.RatingC ?? r.C, MaxC) };
             if (predictedAcc <= rows[0].PredictedAcc) return Clamp(rows[0]);
             for (int i = 1; i < rows.Count; i++)
             {
@@ -407,7 +430,8 @@
                     var p = rows[i - 1]; var n = rows[i];
                     double t = (predictedAcc - p.PredictedAcc) / (n.PredictedAcc - p.PredictedAcc);
                     double L(double x, double y) => x + t * (y - x);
-                    return Clamp(new CurveRow { A = L(p.A, n.A), C = L(p.C, n.C), K = L(p.K, n.K), W = L(p.W, n.W), K2 = L(p.K2, n.K2), P2 = L(p.P2, n.P2) });
+                    return Clamp(new CurveRow { A = L(p.A, n.A), C = L(p.C, n.C), K = L(p.K, n.K), W = L(p.W, n.W), K2 = L(p.K2, n.K2), P2 = L(p.P2, n.P2),
+                        RatingC = L(p.RatingC ?? p.C, n.RatingC ?? n.C) });
                 }
             }
             return Clamp(rows[rows.Count - 1]);

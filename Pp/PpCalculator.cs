@@ -1,11 +1,13 @@
-using RatingAPI.Controllers;
+﻿using RatingAPI.Controllers;
 using System.Numerics;
 
 namespace RatingAPI.Pp
 {
     // A map's ratings for no modifier or one speed modifier, and its acc curve for them (Curve.GetCurve points, from 100%
     // down; null or fewer than 2 points: the base curve)
-    public readonly record struct MapRatings(float AccRating, float PassRating, float TechRating, IReadOnlyList<Vector2>? Curve = null);
+    // PredictedAcc: the map's (or the speed modifier's) predicted acc, for PpFormula's acc relative pass and tech pp (0: unknown,
+    // those count as off)
+    public readonly record struct MapRatings(float AccRating, float PassRating, float TechRating, IReadOnlyList<Vector2>? Curve = null, float PredictedAcc = 0);
 
     // A map's ratings with what all of its scores' pp share: their stars and their curve's value at StarAccuracy
     // (PpCalculator.Prepare), so scoring many scores of one map computes them once
@@ -27,7 +29,7 @@ namespace RatingAPI.Pp
                 return CurveValue(acc);
             }
 
-            // The first point at or below acc (the points go down from 100%): binary search, as the scan it replaced
+            // The first point at or below acc (the points go down from 100%): binary search
             int i = 0, hi = curve.Count;
             while (i < hi)
             {
@@ -56,20 +58,22 @@ namespace RatingAPI.Pp
 
         // Pass, acc and tech pp at accuracy, before PpMultiplier. curve: the map's acc curve (null: the base curve). stars: the
         // map's, for the acc curve power (PpFormula.CurvePowerAt; null: AccCurvePower).
-        public static (float pass, float acc, float tech) GetPp(float accuracy, float accRating, float passRating, float techRating, IReadOnlyList<Vector2>? curve = null, float? stars = null)
+        // predictedAcc: the map's, for the acc relative pass and tech pp (0: off).
+        public static (float pass, float acc, float tech) GetPp(float accuracy, float accRating, float passRating, float techRating, IReadOnlyList<Vector2>? curve = null, float? stars = null, float predictedAcc = 0)
         {
             var formula = PpFormula.Current;
             double power = stars is float s ? formula.CurvePowerAt(s) : formula.AccCurvePower;
-            return GetPp(accuracy, accRating, passRating, techRating, curve, power, power != 1 ? CurveValue(StarAccuracy, curve) : 0);
+            return GetPp(accuracy, accRating, passRating, techRating, curve, power, power != 1 ? CurveValue(StarAccuracy, curve) : 0, predictedAcc);
         }
 
         // GetPp with the acc curve power and the curve's value at StarAccuracy given
-        private static (float pass, float acc, float tech) GetPp(float accuracy, float accRating, float passRating, float techRating, IReadOnlyList<Vector2>? curve, double power, float starCurveValue)
+        private static (float pass, float acc, float tech) GetPp(float accuracy, float accRating, float passRating, float techRating, IReadOnlyList<Vector2>? curve, double power, float starCurveValue, float predictedAcc)
         {
             var formula = PpFormula.Current;
             float curveValue = CurveValue(accuracy, curve);
             if (power != 1) curveValue = formula.AccCurve(curveValue, starCurveValue, power);
-            return (formula.PassPp(passRating), formula.AccPp(curveValue, accRating), formula.TechPp(accuracy, techRating));
+            return (formula.PassPp(passRating) * formula.PassAccMultiplier(accuracy, predictedAcc), formula.AccPp(curveValue, accRating),
+                formula.TechPp(accuracy, techRating));
         }
 
         // A map's ratings prepared for ScorePp (their stars and their curve's value at StarAccuracy)
@@ -84,14 +88,14 @@ namespace RatingAPI.Pp
 
         // Stars: what a StarAccuracy score without modifiers is worth (ScorePp's pp, with the map's curve and the low star
         // bonus), on the star scale (PpFormula.StarsFromPp). With a speed modifier's ratings and curve: that modifier's stars.
-        public static float ToStars(float accRating, float passRating, float techRating, IReadOnlyList<Vector2>? curve = null)
+        public static float ToStars(float accRating, float passRating, float techRating, IReadOnlyList<Vector2>? curve = null, float predictedAcc = 0)
         {
             var formula = PpFormula.Current;
-            (float passPP, float accPP, float techPP) = GetPp(StarAccuracy, accRating, passRating, techRating, curve);
+            (float passPP, float accPP, float techPP) = GetPp(StarAccuracy, accRating, passRating, techRating, curve, predictedAcc: predictedAcc);
             return formula.StarsFromPp(passPP + accPP + techPP);
         }
 
-        public static float ToStars(MapRatings ratings) => ToStars(ratings.AccRating, ratings.PassRating, ratings.TechRating, ratings.Curve);
+        public static float ToStars(MapRatings ratings) => ToStars(ratings.AccRating, ratings.PassRating, ratings.TechRating, ratings.Curve, ratings.PredictedAcc);
 
         // pp of a score: (pp, pp gained from the modifiers, pass pp, acc pp, tech pp).
         // ratings: the map's without modifiers. speedRatings: the map's for the score's speed modifier (SS / FS / SF), null
@@ -122,16 +126,19 @@ namespace RatingAPI.Pp
             if (!modifiers.Contains("NF"))
             {
                 var formula = PpFormula.Current;
-                // The low star bonus (PpFormula.LowStarMultiplier) and the acc curve power use the stars of the ratings each pp uses
+                // The low star bonus (PpFormula.LowStarMultiplier), the mid star top bonus on acc pp (MidStarTopMultiplier) and the acc
+                // curve power use the stars (and predicted acc) of the ratings each pp uses
                 var map = ratings.Ratings;
                 float stars = ratings.Stars;
-                (passPP, accPP, techPP) = GetPp(accuracy, map.AccRating, map.PassRating, map.TechRating, map.Curve, formula.CurvePowerAt(stars), ratings.StarCurveValue);
+                (passPP, accPP, techPP) = GetPp(accuracy, map.AccRating, map.PassRating, map.TechRating, map.Curve, formula.CurvePowerAt(stars), ratings.StarCurveValue, map.PredictedAcc);
+                accPP *= formula.MidStarTopMultiplier(stars, accuracy, map.PredictedAcc);
                 rawPP = Scale(passPP + accPP + techPP) * formula.LowStarMultiplier(stars);
 
                 var prepared = speedRatings ?? ratings;
                 var score = prepared.Ratings;
                 float scoreStars = prepared.Stars;
-                (passPP, accPP, techPP) = GetPp(accuracy, score.AccRating * mp, score.PassRating * mp, score.TechRating * mp, score.Curve, formula.CurvePowerAt(scoreStars), prepared.StarCurveValue);
+                (passPP, accPP, techPP) = GetPp(accuracy, score.AccRating * mp, score.PassRating * mp, score.TechRating * mp, score.Curve, formula.CurvePowerAt(scoreStars), prepared.StarCurveValue, score.PredictedAcc);
+                accPP *= formula.MidStarTopMultiplier(scoreStars, accuracy, score.PredictedAcc);
                 fullPP = Scale(passPP + accPP + techPP) * formula.LowStarMultiplier(scoreStars);
                 if (passPP + accPP + techPP > 0) {
                     increase = fullPP / (passPP + accPP + techPP);

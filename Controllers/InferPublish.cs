@@ -203,7 +203,7 @@ namespace RatingAPI.Controllers
             int predictionSize = DataProcessing.predictionSize;
             var outputs = new float[input.Length, predictionSize];
 
-            // Remove the lock - each thread has its own session now
+            // No lock: each thread has its own session
             using (var output = GetInferenceSessionAccNew().Run(modelInput, new[] { "time_distributed_2" }))
             {
                 var flatOutput = (output.First().Value as IEnumerable<float>).ToArray();
@@ -619,13 +619,17 @@ namespace RatingAPI.Controllers
             return GetAccForMultiplierScale(multiplier);
         }
 
-        public double GetAIAcc(DifficultyV3 mapdata, double bpm, double timescale, double njsMult = 1)
+        public double GetAIAcc(DifficultyV3 mapdata, double bpm, double timescale, double njsMult = 1) =>
+            GetAIAccAndHits(mapdata, bpm, timescale, njsMult).AIAcc;
+
+        // GetAIAcc and the note predictions it comes from (PredictHitsForMap: acc of each note, its time in song seconds)
+        public (double AIAcc, List<float> Accs, List<double> NoteTimes) GetAIAccAndHits(DifficultyV3 mapdata, double bpm, double timescale, double njsMult = 1)
         {
             var (accs, noteTimes, freePoints) = PredictHitsForMap(mapdata, bpm, timescale, njsMult);
             double AIacc = GetMapAccForHits(accs, freePoints);
             double adjustedAIacc = ScaleFarmability(AIacc, accs.Count, ((noteTimes.Last() - noteTimes.First() + 4) / timescale) + 2);
             AIacc = adjustedAIacc;
-            return AIacc;
+            return (AIacc, accs, noteTimes);
         }
 
         // https://deepnote.com/workspace/beatleader-d4376e93-8e9f-461e-9143-e88974e31843/project/BeatLeader-38f67242-d369-4190-9d39-6f957aa93130/notebook/Map%20Categories-9defcb89bd864ca9ac11a55b0f7f9298

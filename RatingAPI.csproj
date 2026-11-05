@@ -19,6 +19,9 @@
     <None Remove="Analyzer\**" />
     <None Remove="beatleader-analyzer\**" />
     <None Remove="Parser\**" />
+    <!-- Python model training scripts, not part of the build or publish -->
+    <Content Remove="Training\**" />
+    <None Remove="Training\**" />
   </ItemGroup>
 
   <ItemGroup>

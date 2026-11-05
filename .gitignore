@@ -13,3 +13,6 @@ Properties/PublishProfiles/*
 /model_sleep_bl_replays_sf_njs-base_vs_nomods.csv
 /model_sleep_bl_replays_sf_vs_nomods.csv
 /model_sleep_bl_v2.onnx
+/Training/tagging_model_new.onnx
+/Training/__pycache__/
+/Training/labeled_maps.csv
