@@ -5,7 +5,8 @@
     //   pass pp = PassScale * e^(PassInner * pass^(1/PassExponent)) - PassOffset   (0 when negative; above PassTopKnee
     //             each point counts PassTopSlope)
     //   acc pp  = curve(acc) * AccWeight * accRating   (the map's own curve, Curve.GetCurve), x MidStarTopMultiplier in
-    //             scores (4-10.5 stars, from the predicted acc - 3%; not in stars)
+    //             scores (4-10.5 stars, from the predicted acc - 3%; not in stars), x OneSaberMultiplier on OneSaber maps
+    //             (above the predicted acc - 2 x its error, 6+ stars, and above the predicted acc, 4+ stars; not in stars)
     //   tech pp = e^(TechAccExponent * acc) * TechWeight * tech   (above TechTopKnee each point counts TechTopSlope)
     //   pp      = (pass + acc + tech) * PpMultiplier   (Scale)
     //   pp      = pp * (1 + LowStarBonus * (LowStarBonusEnd - stars)^LowStarBonusPower)   (only under LowStarBonusEnd stars)
@@ -78,7 +79,10 @@
         // Kept at 1.0128 with the mid star top bonus on acc pp only (stars 4 -> 6.4 ... 8 -> 10.5) and the Analyzer's tech
         // scaler 6.0 / rotation 6.0^1.25 (the top 1000's average pp 16393, v3 16441): 1.0158 (v3's average) put Feral E+ and
         // Unwelcome School (14+ stars, 96.9 / 96.3% BE) from 799 to 801-802pp.
-        public double PpMultiplier { get; set; } = 1.0128;
+        // 1.0064 (1.0128 x 593.07 / 596.86) with the pass light bonus: the median player's pp as before (2026-11-06; the median
+        // player, not the top 1000, is the scale's anchor since 2026-11). 1.0045 (x 593.07 / 594.18) with its tech fade.
+        // 1.0055 (x 593.07 / 592.47) with TechTopBonus back to 0.04 and the pass light bonus from 4 -> 5.5 stars.
+        public double PpMultiplier { get; set; } = 1.0055;
 
         // Low star bonus: maps under LowStarBonusEnd stars pay more. Top players farm the easiest maps to 99%+, but stars are
         // measured at 96%, so pp vs stars fell off steeply at low stars. Stars include the bonus (StarsFromPp), and its
@@ -120,6 +124,7 @@
         // Emulated on the Tech 6 DB (plain / reweighted): no new 800pp play (top bonus map play 793 / 795), the top 100's
         // weighted pp on 7-9.5 stars 10.6 -> 13.1% (no bonus 7.1%), the top 1000's average pp -0.8% (the bonus no longer
         // lifts the pass and tech pp of ranks 101-1000's plays).
+        // Kept (0.05) alongside the ceiling raise v2 (portaBLe CeilingRaise), which only raises maps under their peers.
         public double MidStarTopBonus { get; set; } = 0.05;
         public double MidStarTopStart { get; set; } = 4.2508;
         public double MidStarTopFull { get; set; } = 6.3762;
@@ -128,7 +133,98 @@
         public double MidStarTopAccBelow { get; set; } = 0.03;
         public double MidStarTopAccAbove { get; set; } = 0;
 
+        // Tech top bonus (2026-11-06): on tech maps the Acc AI predicts too much acc (players land 0.07 / 0.19 / 0.43% further
+        // under it than on their other maps of those stars at tech 5-6 / 6-7 / 7-9), and the curve is steepest there, so the
+        // world's best plays (#1 to #10 alike) paid 2-3% under same-star maps (Top 5 vs stars -1.8 / -2.2 / -3.2% at tech
+        // 6-7 / 7-8 / 8-10, other maps +1%) while players' pay against their own plays stayed about even. acc pp x (1 +
+        // TechTopBonus x ease(tech from TechTopStart to TechTopFull) x fade(stars) x ease(acc from predicted -
+        // TechTopAccBelow to predicted)), the mid star top bonus's shape (on up to 100%, so no bump); fade is 1 up to
+        // TechTopStarsFull stars, easing to 0 at TechTopStarsEnd (13+ star tech maps' best plays already reach 760-805).
+        // stars, tech and predicted acc: those of the version played. Not in stars. 0 = off.
+        // Emulated (0.04, no fade, before the acc reweighter): Top 5 vs stars at tech 6-7 / 7-8 / 8-10 -1.0 / -0.1 / -0.9%,
+        // no slope drop on 1157 maps; the 800+ plays (2 -> 7) all #1 plays on 13-15 star tech maps: the star fade.
+        // 0.02 with the pass light bonus (pass-light maps at 8+ stars are mostly tech maps, and with both tech 6.5+ maps went
+        // from even to over), back to 0.04 once the pass light bonus faded out with tech: that overpay was the pass light
+        // bonus's, and at 0.02 tech maps' best plays were 1.6-4.4% under same-star maps again.
+        public double TechTopBonus { get; set; } = 0.04;
+        public double TechTopStart { get; set; } = 5;
+        public double TechTopFull { get; set; } = 8;
+        public double TechTopStarsFull { get; set; } = 11;
+        public double TechTopStarsEnd { get; set; } = 13;
+        public double TechTopAccBelow { get; set; } = 0.03;
+
+        // Pass light bonus (2026-11-06): the Acc AI predicts too much acc on maps with little pass for their stars (players
+        // land 0.75% further under it there than on pass heavy maps of the same stars and predicted acc), so they paid every
+        // player less (same-player pay, pass share fifths per star band: light -2.8 / -2.8 / -1.7 / -1.6% for the top 100 /
+        // 101-1000 / 1001-10000 / 10000+, heavy +1-2%). Changing the pass rating can't fix both ends (a low acc play has more
+        // pass share than stars at 96%, a top play less), nor can flat pass pp (PassAccExponent 0: worse under the top 1000).
+        // acc pp x (1 + ease(lightness from PassLightFrom to PassLightFull) x fade(stars) x (PassLightBonus + PassLightTopBonus
+        // x ease(acc from predicted - PassLightAccBelow to predicted))). lightness: how far the map's pass share (pass rating /
+        // stars) sits under the typical share at its stars (PassShareByStars: median, spread = IQR / 1.35, Standard maps
+        // 2026-11-06), in spreads, x (1 - ease(tech from TechTopStart to TechTopFull)); fade eases in from PassLightStarsStart
+        // to PassLightStarsIn stars (no pass to speak of under ~3 stars) and out from PassLightStarsFull to PassLightStarsEnd
+        // (the 12+ star tilt is small, their top plays 790-805).
+        // Nomod speed only (not SS / FS / SF ratings), not OneSaber. Not in stars. 0 = off.
+        // Emulated (0.04 + 0.02, before the star fades): heavy - light +5.1 / +4.9 / +2.6 / +2.7 -> +1.7 / +2.1 / +0.2 / +0.4
+        // points, speed maps unchanged, the median player +5pp; the new 800s were #1 plays on 10-15 star maps.
+        // Tech fade (2026-11-06): pass-light maps at 8+ stars are mostly tech maps, which the tech top bonus already covers;
+        // with both, tech 6.5+ maps paid +0.9..+1.2% (top 1000 +1.0..+1.6%) over tech < 5 maps. So the bonus fades out as
+        // tech rises from TechTopStart to TechTopFull (the tech top bonus's range), and is stronger for the rest (0.07 + 0.03,
+        // was 0.04 + 0.02). Emulated: that tech gap -0.3..+0.4% (top 1000 -0.3..+0.7%), the pass tilt as before (heavy -
+        // light +2.1 / +2.2 / +0.3 / -0.1), pass-light 4-6 star maps -1.9 -> -0.5% (top 1000 -3.9 -> -2.3%), pass-light
+        // 10-12 star maps (tech maps) -0.1 -> -1.0%.
+        public double PassLightBonus { get; set; } = 0.07;
+        public double PassLightTopBonus { get; set; } = 0.03;
+        public double PassLightFrom { get; set; } = 0;
+        public double PassLightFull { get; set; } = 1.5;
+        public double PassLightAccBelow { get; set; } = 0.03;
+        // 4 -> 5.5 (was 3 -> 4, the ceiling raise's range): at full strength changes Hard (4.94 stars, pass share 0.06) went
+        // 786 -> 810pp, the top play, and 700+ plays under 5 stars 19 -> 21.
+        public double PassLightStarsStart { get; set; } = 4;
+        public double PassLightStarsIn { get; set; } = 5.5;
+        public double PassLightStarsFull { get; set; } = 11;
+        public double PassLightStarsEnd { get; set; } = 13;
+        // (stars, median pass share, spread)
+        public static readonly (double Stars, double Median, double Spread)[] PassShareByStars =
+        {
+            (3.0, 0.1147, 0.0789), (3.5, 0.1867, 0.1089), (4.0, 0.2508, 0.1071), (4.5, 0.3042, 0.1033), (5.0, 0.3744, 0.1113),
+            (5.5, 0.4368, 0.1174), (6.0, 0.4904, 0.1204), (6.5, 0.5436, 0.1285), (7.0, 0.5884, 0.1412), (7.5, 0.6351, 0.1436),
+            (8.0, 0.6690, 0.1421), (8.5, 0.6798, 0.1510), (9.0, 0.7146, 0.1515), (9.5, 0.7330, 0.1513), (10.0, 0.7593, 0.1584),
+            (10.5, 0.7935, 0.1726), (11.0, 0.8175, 0.1987), (11.5, 0.8594, 0.1949), (12.0, 0.8845, 0.1842), (12.5, 0.8503, 0.1626),
+            (13.0, 0.8320, 0.1286),
+        };
+
         public static PpFormula Current { get; set; } = new();
+
+        // The pass light bonus's acc pp multiplier
+        public float PassLightMultiplier(float stars, float passRating, float techRating, float accuracy, float predictedAcc)
+        {
+            if ((PassLightBonus == 0 && PassLightTopBonus == 0) || !(stars > PassLightStarsStart && stars < PassLightStarsEnd)) return 1;
+            var t = PassShareByStars;
+            int i = 1;
+            while (i < t.Length - 1 && t[i].Stars < stars) i++;
+            double f = Math.Clamp((stars - t[i - 1].Stars) / (t[i].Stars - t[i - 1].Stars), 0, 1);
+            double median = t[i - 1].Median + f * (t[i].Median - t[i - 1].Median), spread = t[i - 1].Spread + f * (t[i].Spread - t[i - 1].Spread);
+            double lightness = (median - passRating / stars) / spread;
+            double w = Ease((lightness - PassLightFrom) / (PassLightFull - PassLightFrom))
+                * (1 - Ease((techRating - TechTopStart) / (TechTopFull - TechTopStart)));
+            if (w == 0) return 1;
+            w *= stars < PassLightStarsIn ? Ease((stars - PassLightStarsStart) / (PassLightStarsIn - PassLightStarsStart))
+                : stars > PassLightStarsFull ? Ease((PassLightStarsEnd - stars) / (PassLightStarsEnd - PassLightStarsFull)) : 1;
+            double top = predictedAcc > 0 ? Ease((accuracy - (predictedAcc - PassLightAccBelow)) / PassLightAccBelow) : 0;
+            return 1 + (float)(w * (PassLightBonus + PassLightTopBonus * top));
+        }
+
+        // The tech top bonus's acc pp multiplier
+        public float TechTopMultiplier(float stars, float techRating, float accuracy, float predictedAcc)
+        {
+            if (TechTopBonus == 0 || !(predictedAcc > 0) || !(techRating > TechTopStart) || !(stars < TechTopStarsEnd)) return 1;
+            double from = predictedAcc - TechTopAccBelow;
+            if (!(accuracy > from)) return 1;
+            double tech = Ease((techRating - TechTopStart) / (TechTopFull - TechTopStart));
+            double fade = stars <= TechTopStarsFull ? 1 : Ease((TechTopStarsEnd - stars) / (TechTopStarsEnd - TechTopStarsFull));
+            return 1 + (float)(TechTopBonus * tech * fade * Ease((accuracy - from) / TechTopAccBelow));
+        }
 
         // The acc pp multiplier
         public float MidStarTopMultiplier(float stars, float accuracy, float predictedAcc)
@@ -150,6 +246,90 @@
         }
 
         private static double Ease(double t) { t = Math.Clamp(t, 0, 1); return t * t * (3 - 2 * t); }
+
+        // OneSaber acc pp (replaces the Analyzer's ONE_SABER_NERF, OneSaber pass x0.657; each hand is now half of the pass, so
+        // OneSaber pass x0.5): acc pp x (1 + OneSaberBuff x fade(stars) x ease(acc from reference - OneSaberWidth to reference
+        // + OneSaberWidth)), reference = predicted acc - OneSaberErrorOffset x (1 - predicted acc); fade eases from 0 at
+        // OneSaberBuffStart stars to 1 at OneSaberBuffFull. Not in stars. Stars and predicted acc of the version played. 0 = off.
+        // Measured as each OneSaber score's log pp minus the player's own Standard plays at the same stars (kernel, 0.5 star),
+        // with the Analyzer at 50% per hand (Dev Acc rerated): OneSaber paid ranks 1-100 / 101-500 / 501-2000 / 2001-5000 /
+        // 5001-15000 / 15001+ -5.2 / -6.0 / -2.6 / -1.8 / -1.0 / 0.0% (with 0.343: -4.0 / -4.6 / -1.1 / -0.1 / +1.3 / +3.1%),
+        // because the Acc AI overestimates OneSaber acc more on harder maps (players' median 1-2% under it on 3-4 star maps, 8-13%
+        // on 9-12 stars). A nerf below the predicted acc itself made it worse (it hits the hard maps where everyone is far
+        // under it: 0-5 / 10+ stars +7.6 / -9.3%); with the reference lowered by twice the predicted error (98% -> 94%, 96.5%
+        // -> 89.5%) a buff above it alone evens the ranks out, and the fit wants no nerf below it. The buff fades in from 6 to 8
+        // stars: easy OneSaber maps already overpaid (0-5 stars +5%) and a 4 star map's top play would go 660 -> 699pp.
+        // Emulated: ranks -0.7 / -2.0 / +0.7 / -0.4 / -0.7 / 0.0%, all OneSaber -1.7 -> -0.3%, top OneSaber plays per star band
+        // under Standard's 99.99th percentile (7-9 / 9-11 / 11+ stars 633 / 637 / 648 vs 708 / 723 / 757). What's left is by map
+        // (0-5 stars +5%, 10+ -5%), the acc reweighter's job. (The nerf below the reference, 0 since that fit, was removed.)
+        public double OneSaberBuff { get; set; } = 0.08;
+        public double OneSaberErrorOffset { get; set; } = 2;
+        public double OneSaberWidth { get; set; } = 0.02;
+        public double OneSaberBuffStart { get; set; } = 6;
+        public double OneSaberBuffFull { get; set; } = 8;
+        // Top end: x (1 + OneSaberTopBuff x ease(acc from predicted - OneSaberWidth to predicted + OneSaberWidth)) on top of
+        // the above, all stars. The project's goals aren't "pays like Standard of the same stars" but worth to as many
+        // players as possible and a flat top so any style competes there: with the above alone OneSaber maps were in as many
+        // of their players' top 20 as Standard maps of their stars (+0.4 points) but their top 5 plays were 6.7% under
+        // theirs (0-6 / 6-8 / 8-10 / 10+ stars -12.5 / -7.2 / -5.1 / -4.5%), and only 4 of the 63 top 100 players with a
+        // OneSaber play had one in their top 20. At the predicted acc (not lower: from predicted - 0.5 x its error up, a
+        // OneSaber map was the best play of 10-23% of its players, Standard's 99th percentile 2.8%) only the top end moves.
+        // Emulated on the autoreweighted DB, 0.3: top 5 +0.0% (-3.0 / +2.6 / +1.9 / -0.6%), top 20 shares +0.6 points, best
+        // play shares at most 5.9% (was 4.7%), OneSaber plays 700+ 0 -> 7, no 800. 0 = off.
+        // Faded in from OneSaberTopStart to OneSaberTopFull stars: without it, 99.3% scores just over the predicted acc on
+        // Wheels on the Bus Easy (4.05 stars) / Higher Ground Easy (3.58) made 772 / 728pp (Standard's 99.99th percentile
+        // under 5 stars 681). With 4 -> 6 every star band's top OneSaber play is under Standard's 99.99th (5-7 stars 701 /
+        // 700), top 5 -0.8% (under 6 stars -9.7%), best play shares at most 4.7%.
+        // 0.1 (was 0.3): top 5 and top 20 shares depend on who plays a map, so checked again per player (each OneSaber play
+        // against the same player's Standard plays at those stars): with 0.3 the top 100 got 2.8% more from OneSaber (5.3% at
+        // the predicted acc); OneSaber maps are played by stronger players than Standard ones of their stars (8-10 stars:
+        // median rank 3,521 vs 4,774), so their low top 5 was real, but most of it can't be fixed without overpaying the top.
+        // Real rerate + acc reweighter: ranks 1-100 / 101-500 / 501-2000 / 2001-5000 / 5001-15000 / 15001+ +1.0 / -1.0 /
+        // +1.1 / -0.6 / -0.9 / -0.4%, top 5 -4.5% (Prod -6.7%), top OneSaber play 690pp, no 700+.
+        public double OneSaberTopBuff { get; set; } = 0.1;
+        public double OneSaberTopStart { get; set; } = 4;
+        public double OneSaberTopFull { get; set; } = 6;
+
+        // Top tilt: a per-map change of the curve's top, set by the ceiling raise (portaBLe CeilingRaise, in the acc reweighter's
+        // step): acc pp x e^(L x tanh(tilt x onset(u) / L)), u = ln(curve(acc) / curve(anchor)), onset 0 up to the anchor,
+        // u^2 / (2 x TopTiltSoftness) over the next TopTiltSoftness, then u - TopTiltSoftness / 2: no change under the anchor,
+        // a power of the curve over it, continuous with a continuous slope (no bump); L = ln(1 + TopTiltCap) bounds every
+        // play's change. Not in stars; nomod ratings only. TopTiltCap 0 = off.
+        // First built for a fit on each kind of map's specialists (TopShapeFitter, removed): tried at 0.08, 2026-11-06, the
+        // real run didn't reproduce the emulation. Centered within each kind of map (else
+        // it only nerfed the top end: the panel's better plays sit over the other players everywhere), the top 100's pay
+        // spread across maps went 5.47 -> 5.58%, maps' top plays vs their stars 8.58 -> 8.61%, the nomod top end 786 ->
+        // 817pp, and the specialists lost 150-226pp: a specialist's best plays are partly lucky ones, which read as overpaying.
+        // Was 0 (off). Tried 0.3 for the ceiling raise v1 (portaBLe CeilingRaise, map data only, 2026-11-06): the top end went 802
+        // -> 985pp (2287 plays 800+), maps' top plays vs their stars spread 8.6 -> 14.9%, the top 10 +21% pp: its ceiling acc
+        // (an amazing play at a typical map's contenders) sat under real top plays, which got the tilt's x1.3 bound instead
+        // of the target; and the bound's saturation lowers the curve's slope there (a bump) on 2959 maps.
+        // 3 (loose) for the ceiling raise v2 (portaBLe CeilingRaise: raises up to x1.2, so the tanh stays a plain power: no
+        // saturation, no bump).
+        public double TopTiltCap { get; set; } = 3;
+        public double TopTiltSoftness { get; set; } = 0.15;
+
+        // The acc pp multiplier of a map's top tilt; curveAtAcc / curveAtAnchor: the map's curve at the score's acc and the anchor
+        public float TopTiltMultiplier(float tilt, float curveAtAcc, float curveAtAnchor)
+        {
+            if (tilt == 0 || TopTiltCap <= 0 || !(curveAtAcc > 0) || !(curveAtAnchor > 0)) return 1;
+            double u = Math.Log(curveAtAcc / curveAtAnchor), s = TopTiltSoftness;
+            double onset = u <= 0 ? 0 : u < s ? u * u / (2 * s) : u - s / 2;
+            double cap = Math.Log(1 + TopTiltCap);
+            return (float)Math.Exp(cap * Math.Tanh(tilt * onset / cap));
+        }
+
+        // The acc pp multiplier of a OneSaber map's score
+        public float OneSaberMultiplier(float stars, float accuracy, float predictedAcc)
+        {
+            if ((OneSaberBuff == 0 && OneSaberTopBuff == 0) || !(predictedAcc > 0)) return 1;
+            double reference = predictedAcc - OneSaberErrorOffset * (1 - predictedAcc);
+            double fade = OneSaberBuffFull > OneSaberBuffStart ? Ease((stars - OneSaberBuffStart) / (OneSaberBuffFull - OneSaberBuffStart)) : 1;
+            double ramp = Ease((accuracy - reference + OneSaberWidth) / (2 * OneSaberWidth));
+            double topFade = OneSaberTopFull > OneSaberTopStart ? Ease((stars - OneSaberTopStart) / (OneSaberTopFull - OneSaberTopStart)) : 1;
+            double top = 1 + OneSaberTopBuff * topFade * Ease((accuracy - predictedAcc + OneSaberWidth) / (2 * OneSaberWidth));
+            return (float)((1 + OneSaberBuff * fade * ramp) * top);
+        }
 
         // Tech pp top compression: above TechTopKnee tech, each point counts TechTopSlope. 1 = off. Tech share was only
         // overpaid on the highest-tech maps (13+), so this trims them without touching tech 11-13. 9 (was 12) with the rotation^1.5
@@ -289,6 +469,6 @@
         public float Scale(float pp) => (float)PpMultiplier * pp;
 
         public override string ToString() => FormattableString.Invariant(
-            $"pass {PassScale}*e^({PassInner}*p^(1/{PassExponent}))-{PassOffset} (x{PassTopSlope} above {PassTopKnee}), acc x{AccWeight}*a, tech e^({TechAccExponent}a)*{TechWeight}*t (x{TechTopSlope} above {TechTopKnee}), x{PpMultiplier}, stars pp/{StarDivisor}, low star bonus {LowStarBonus}*({LowStarBonusEnd}-stars)^{LowStarBonusPower}, mid star top bonus {MidStarTopBonus} ({MidStarTopStart}-{MidStarTopFull}-{MidStarTopFullEnd}-{MidStarTopEnd} stars, predicted -{MidStarTopAccBelow} to +{MidStarTopAccAbove} acc, acc pp)");
+            $"pass {PassScale}*e^({PassInner}*p^(1/{PassExponent}))-{PassOffset} (x{PassTopSlope} above {PassTopKnee}), acc x{AccWeight}*a, tech e^({TechAccExponent}a)*{TechWeight}*t (x{TechTopSlope} above {TechTopKnee}), x{PpMultiplier}, stars pp/{StarDivisor}, low star bonus {LowStarBonus}*({LowStarBonusEnd}-stars)^{LowStarBonusPower}, pass light bonus {PassLightBonus} + {PassLightTopBonus} near predicted (lightness {PassLightFrom}-{PassLightFull}, stars {PassLightStarsStart}-{PassLightStarsIn}-{PassLightStarsFull}-{PassLightStarsEnd}), tech top bonus {TechTopBonus} (tech {TechTopStart}-{TechTopFull}, stars to {TechTopStarsFull}-{TechTopStarsEnd}, predicted -{TechTopAccBelow}), mid star top bonus {MidStarTopBonus} ({MidStarTopStart}-{MidStarTopFull}-{MidStarTopFullEnd}-{MidStarTopEnd} stars, predicted -{MidStarTopAccBelow} to +{MidStarTopAccAbove} acc, acc pp), one saber acc pp +{OneSaberBuff} around predicted - {OneSaberErrorOffset} x error (+-{OneSaberWidth}, buff {OneSaberBuffStart}-{OneSaberBuffFull} stars, +{OneSaberTopBuff} above predicted, {OneSaberTopStart}-{OneSaberTopFull} stars)");
     }
 }

@@ -48,23 +48,22 @@ namespace RatingAPI.Controllers
     }
 
     public class RatingResult
-    {
+    { // What a 96% score is worth, from these ratings and PointList (Pp.PpCalculator.ToStars)
+        [JsonPropertyName("stars")]
+        public double Stars { get; set; } = 0;
         [JsonPropertyName("predicted_acc")]
         public double PredictedAcc { get; set; } = 0;
         [JsonPropertyName("acc_rating")]
         public double AccRating { get; set; } = 0;
         [JsonPropertyName("lack_map_calculation")]
         public LackMapCalculation LackMapCalculation { get; set; } = new();
-        [JsonPropertyName("pointlist")]
-        public List<Point> PointList { get; set; } = new();
-        // What a 96% score is worth, from these ratings and PointList (Pp.PpCalculator.ToStars)
-        [JsonPropertyName("stars")]
-        public double Stars { get; set; } = 0;
         [JsonPropertyName("song_length")]
         public float Length { get; set; } = 0;
         // Base NJS of the difficulty from Info.dat (the speed modifier isn't applied)
         [JsonPropertyName("njs")]
         public float Njs { get; set; } = 0;
+        [JsonPropertyName("pointlist")]
+        public List<Point> PointList { get; set; } = new();
         // Speed / tech / acc over time, from the same swings and note predictions (RatingBreakdown)
         [JsonPropertyName("breakdown")]
         public RatingBreakdown? Breakdown { get; set; }
