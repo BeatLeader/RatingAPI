@@ -356,10 +356,11 @@
         public double MaxC { get; set; } = 1;
 
         // Slider tilt: maps with many sliders (and curved sliders) were worth more than others of their stars, while their
-        // top scores sit as close to the predicted acc as on other maps. Their curve is multiplied by
+        // top scores sit as close to the predicted acc as on other maps (most players beat their usual acc vs the
+        // prediction there by 0.3-0.6 points: the Acc AI's wrong prediction below the top). Their curve is multiplied by
         // e^(SliderTilt x slider share x (acc - predicted acc) in %), up to SliderTiltRange from the predicted acc: higher
         // above it, lower under it, unchanged at it (the acc rating doesn't use it; the stars do, as scores at 96%). 0 = off.
-        public double SliderTilt { get; set; } = 0.2;
+        public double SliderTilt { get; set; } = 0.3;
         public double SliderTiltRange { get; set; } = 0.015;
 
         // Low note and length nerf: maps with few notes and short maps are worth too much for how easily they're grinded to
