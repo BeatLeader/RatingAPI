@@ -82,7 +82,8 @@
         // 1.0064 (1.0128 x 593.07 / 596.86) with the pass light bonus: the median player's pp as before (2026-11-06; the median
         // player, not the top 1000, is the scale's anchor since 2026-11). 1.0045 (x 593.07 / 594.18) with its tech fade.
         // 1.0055 (x 593.07 / 592.47) with TechTopBonus back to 0.04 and the pass light bonus from 4 -> 5.5 stars.
-        public double PpMultiplier { get; set; } = 1.0055;
+        // 1.0101 (x 596.47 / 593.78) with the halved hit distance correction (AccRating.HIT_DISTANCE_SLOPE 0.015, no easy share).
+        public double PpMultiplier { get; set; } = 1.0101;
 
         // Low star bonus: maps under LowStarBonusEnd stars pay more. Top players farm the easiest maps to 99%+, but stars are
         // measured at 96%, so pp vs stars fell off steeply at low stars. Stars include the bonus (StarsFromPp), and its

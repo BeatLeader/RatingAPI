@@ -30,15 +30,19 @@
         // the effective acc on easier maps (steeper curve), so applied everywhere it overpaid easy maps with a lot of
         // movement. Hit distance is capped at 0.8 m, where the shortfall stops growing (extreme spacing got too much).
         // No tech term: tech pp already pays for the acc players lose on tech maps.
+        // HIT_DISTANCE_SLOPE 0.015 (was 0.030) with the current pass, tech and pp formula: on the P75 worth, 0.7 m+ maps were
+        // 0.8-1.2% over others of their stars at every predicted acc with 0.030, and 0.8-1.6% under on hard maps without
+        // the correction; with 0.015 every band is within 0.3% (2026-11-07, exp-hd-*.db).
         public static double HIT_DISTANCE_KNEE { get; set; } = 0.62;
-        public static double HIT_DISTANCE_SLOPE { get; set; } = 0.030;
+        public static double HIT_DISTANCE_SLOPE { get; set; } = 0.015;
         public static double HIT_DISTANCE_CAP { get; set; } = 0.80;
         public static double HIT_DISTANCE_FULL_BELOW { get; set; } = 0.97;
         public static double HIT_DISTANCE_NONE_ABOVE { get; set; } = 0.975;
         // Share of the hit distance correction kept above HIT_DISTANCE_NONE_ABOVE (0: phased out entirely). 0.2: on the P75
         // worth, easy maps (97.5%+) over 0.7 m were 1.1% under the others with none (-0.0111 -> -0.0009 with 0.2; 0.4 and 0.8
-        // overshot to +0.009 / +0.028)
-        public static double HIT_DISTANCE_EASY_SHARE { get; set; } = 0.2;
+        // overshot to +0.009 / +0.028). 0 since 2026-11-07 (with HIT_DISTANCE_SLOPE 0.015): 0.2 put those maps 1.2% over,
+        // none leaves them even (-0.0002).
+        public static double HIT_DISTANCE_EASY_SHARE { get; set; } = 0;
         public static double HIGH_PASS_KNEE { get; set; } = 14.52;
         public static double HIGH_PASS_SLOPE { get; set; } = 0.00214;
 
