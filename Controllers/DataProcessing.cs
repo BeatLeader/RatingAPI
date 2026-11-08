@@ -18,7 +18,8 @@ namespace RatingAPI.Controllers
         Combined = -1, // e.g. arc head + arc tail: no one-hot slot (all zeros), same as in training
     }
 
-    public record MapNote(double Time, int X, int Y, int Direction, int Color, double Njs, NoteKind Kind);
+    // Swing: the note's Acc AI swing features (Analyzer AccAiSwingFeatures), null when the model has none or the note is in no swing
+    public record MapNote(double Time, int X, int Y, int Direction, int Color, double Njs, NoteKind Kind, float[]? Swing = null);
 
     public class DataProcessing
     {
@@ -32,8 +33,11 @@ namespace RatingAPI.Controllers
         // Set by InferPublish from the ONNX model's input size:
         // 49 values per note = old model, 53 = model trained with the note-type features.
         public static bool UseNoteKindFeatures = true;
+        // Set by InferPublish too: 67 values per note = 53 + the swing features (Analyzer AccAiSwingFeatures, appended last)
+        public static bool UseSwingFeatures = false;
 
-        public static int noteSize => BaseNoteSize + (UseNoteKindFeatures ? NoteKindFeatures : 0);
+        public static int noteSize => BaseNoteSize + (UseNoteKindFeatures ? NoteKindFeatures : 0)
+            + (UseSwingFeatures ? beatleader_analyzer.BeatmapScanner.Helper.AccAiSwingFeatures.Size : 0);
         public static int segmentSize => preSegmentSize + postSegmentSize + predictionSize;
 
         // Dictionaries for direction to angle and angle to direction
@@ -94,7 +98,8 @@ namespace RatingAPI.Controllers
 
         // Map notes in the order the model was trained on: time, then x, y, direction, color.
         // Chain links are not included (they are counted as free points), bombs are not notes.
-        public static List<MapNote> GetMapNotesFromJson(DifficultyV3 mapdata, double bpm, List<Note> notesToIgnore = null)
+        // swing: the Analyzer's swing features of the map's notes (AccAiSwingFeatures.Compute), for a model with them
+        public static List<MapNote> GetMapNotesFromJson(DifficultyV3 mapdata, double bpm, List<Note> notesToIgnore = null, IReadOnlyDictionary<Note, float[]> swing = null)
         {
             bool hasSliders = mapdata.Arcs.Any() || mapdata.Chains.Count > 0;
             return mapdata.Notes
@@ -108,7 +113,8 @@ namespace RatingAPI.Controllers
                         GetNoteDirection(n.CutDirection, n.AngleOffset),
                         n.Color,
                         n.njs,
-                        hasSliders ? GetNoteKind(n, mapdata) : NoteKind.Normal
+                        hasSliders ? GetNoteKind(n, mapdata) : NoteKind.Normal,
+                        swing != null && swing.TryGetValue(n, out var features) ? features : null
                     ))
                     .OrderBy(n => n.Time).ThenBy(n => n.X).ThenBy(n => n.Y).ThenBy(n => n.Direction).ThenBy(n => n.Color)
                     .ToList();
@@ -171,6 +177,12 @@ namespace RatingAPI.Controllers
                 double[] kind = new double[NoteKindFeatures];
                 if (note.Kind != NoteKind.Combined) kind[(int)note.Kind] = 1;
                 response.AddRange(kind);
+            }
+
+            if (UseSwingFeatures)
+            {
+                int size = beatleader_analyzer.BeatmapScanner.Helper.AccAiSwingFeatures.Size;
+                for (int i = 0; i < size; i++) response.Add(note.Swing != null ? note.Swing[i] : 0);
             }
 
             return response;
@@ -247,17 +259,17 @@ namespace RatingAPI.Controllers
             return linkCount * 20 * 8;
         }
 
-        public (List<MapNote> mapNotes, int freePoints) GetMapData(DifficultyV3 mapdata, double bpm, List<Note> notesToIgnore = null)
+        public (List<MapNote> mapNotes, int freePoints) GetMapData(DifficultyV3 mapdata, double bpm, List<Note> notesToIgnore = null, IReadOnlyDictionary<Note, float[]> swing = null)
         {
-            var mapNotes = GetMapNotesFromJson(mapdata, bpm, notesToIgnore);
+            var mapNotes = GetMapNotesFromJson(mapdata, bpm, notesToIgnore, swing);
             var freePoints = GetFreePointsForMap(mapdata);
             return (mapNotes, freePoints);
         }
 
-        public (List<List<double[]>> segments, List<double> noteTimes, int freePoints) PreprocessMap(DifficultyV3 mapdata, double bpm, double timescale, double njsMult = 1, List<Note> notesToIgnore = null)
+        public (List<List<double[]>> segments, List<double> noteTimes, int freePoints) PreprocessMap(DifficultyV3 mapdata, double bpm, double timescale, double njsMult = 1, List<Note> notesToIgnore = null, IReadOnlyDictionary<Note, float[]> swing = null)
         {
             var emptyResponse = (new List<List<double[]>>(), new List<double>(), 0);
-            var (mapNotes, freePoints) = GetMapData(mapdata, bpm, notesToIgnore);
+            var (mapNotes, freePoints) = GetMapData(mapdata, bpm, notesToIgnore, swing);
             if (mapNotes == null || mapNotes.Count == 0)
             {
                 return emptyResponse;

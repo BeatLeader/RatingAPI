@@ -27,8 +27,6 @@ namespace RatingAPI.Controllers
         // (the results are the same: every window is predicted on its own).
         private const int BatchSize = 512;
         private const int NumThreads = 1; // Reduce per-session threads since we'll have multiple sessions
-        private const int preSegmentSize = 12;
-        private const int postSegmentSize = 12;
         private DataProcessing dataProcessing = new DataProcessing();
 
         private static object inferenceSessionLock = new();
@@ -45,24 +43,43 @@ namespace RatingAPI.Controllers
         private static InferenceSession? _tagSession;
 
         // Number of values per note the accuracy model expects (last input dimension):
-        // 49 for the old model, 53 for a model trained with the note-type features.
-        private static readonly Lazy<int> AccModelNoteSize = new(() =>
+        // 49 for the old model, 53 for a model trained with the note-type features, 67 with the swing features too.
+        private const int KindNoteSize = DataProcessing.BaseNoteSize + DataProcessing.NoteKindFeatures;
+        private static int SwingNoteSize => KindNoteSize + beatleader_analyzer.BeatmapScanner.Helper.AccAiSwingFeatures.Size;
+        // (values per note, notes per window) of the embedded model's input. The window is context | 8 predicted | context,
+        // the same context on both sides: 32 notes (12 | 8 | 12) for the older models, 56 (24 | 8 | 24) since November 2026.
+        private static readonly Lazy<(int NoteSize, int Segment)> AccModelInput = new(() =>
         {
             using var session = new InferenceSession(LoadEmbeddedResource("model_sleep_bl.onnx"));
             var dims = session.InputMetadata["input_1"].Dimensions;
             int size = dims[dims.Length - 1];
-            if (size != DataProcessing.BaseNoteSize && size != DataProcessing.BaseNoteSize + DataProcessing.NoteKindFeatures)
+            if (size != DataProcessing.BaseNoteSize && size != KindNoteSize && size != SwingNoteSize)
             {
-                throw new InvalidOperationException($"model_sleep_bl.onnx expects {size} values per note; DataProcessing supports {DataProcessing.BaseNoteSize} or {DataProcessing.BaseNoteSize + DataProcessing.NoteKindFeatures}.");
+                throw new InvalidOperationException($"model_sleep_bl.onnx expects {size} values per note; DataProcessing supports {DataProcessing.BaseNoteSize}, {KindNoteSize} or {SwingNoteSize}.");
             }
-            return size;
+            int segment = dims[dims.Length - 2];
+            if (segment <= DataProcessing.predictionSize || (segment - DataProcessing.predictionSize) % 2 != 0)
+            {
+                throw new InvalidOperationException($"model_sleep_bl.onnx expects windows of {segment} notes; DataProcessing needs {DataProcessing.predictionSize} + twice the context.");
+            }
+            return (size, segment);
         });
+        private static int AccModelNoteSize => AccModelInput.Value.NoteSize;
+
+        // The embedded model takes the Analyzer's swing features: callers pass them (AccAiSwingFeatures.Compute of the
+        // map's Ratings.SwingData), notes without them get zeros
+        public static bool UsesSwingFeatures => AccModelNoteSize == SwingNoteSize;
 
         public InferPublish()
         {
             // Build inputs in the layout the embedded model was trained with.
-            DataProcessing.UseNoteKindFeatures = AccModelNoteSize.Value == DataProcessing.BaseNoteSize + DataProcessing.NoteKindFeatures;
+            DataProcessing.UseNoteKindFeatures = AccModelNoteSize >= KindNoteSize;
+            DataProcessing.UseSwingFeatures = AccModelNoteSize == SwingNoteSize;
+            DataProcessing.preSegmentSize = DataProcessing.postSegmentSize = (AccModelInput.Value.Segment - DataProcessing.predictionSize) / 2;
         }
+
+        // The embedded Acc AI model's bytes (AccAiCache's file per model)
+        public static byte[] AccModelBytes() => LoadEmbeddedResource("model_sleep_bl.onnx");
 
         private static byte[] LoadEmbeddedResource(string resourceName)
         {
@@ -223,9 +240,9 @@ namespace RatingAPI.Controllers
             return listOutputs;
         }
 
-        public (List<float>, List<double>, int) PredictHitsForMap(DifficultyV3 mapdata, double bpm, double timescale = 1, double njsMult = 1, List<Note> notesToIgnore = null)
+        public (List<float>, List<double>, int) PredictHitsForMap(DifficultyV3 mapdata, double bpm, double timescale = 1, double njsMult = 1, List<Note> notesToIgnore = null, IReadOnlyDictionary<Note, float[]> swing = null)
         {
-            var (segments, noteTimes, freePoints) = dataProcessing.PreprocessMap(mapdata, bpm, timescale, njsMult, notesToIgnore);
+            var (segments, noteTimes, freePoints) = dataProcessing.PreprocessMap(mapdata, bpm, timescale, njsMult, notesToIgnore, swing);
             if (segments.Count == 0)
             {
                 return (new List<float>(), new List<double>(), freePoints);
@@ -233,15 +250,27 @@ namespace RatingAPI.Controllers
 
             var predictionsArraysAcc = new List<float[]>();
 
-            for (int i = 0; i < segments.Count; i += BatchSize)
+            // The model's output on these exact windows, from an earlier rerate (AccAiCache; off in the API)
+            UInt128 cacheKey = AccAiCache.Enabled ? AccAiCache.Key(segments) : default;
+            var cached = AccAiCache.Enabled ? AccAiCache.Get(cacheKey) : null;
+            if (cached != null)
             {
-                var batch = segments.GetRange(i, Math.Min(BatchSize, segments.Count - i)).ToArray();
-                if (batch.Length == 0)
+                int size = DataProcessing.predictionSize;
+                for (int i = 0; i < segments.Count; i++) predictionsArraysAcc.Add(cached.AsSpan(i * size, size).ToArray());
+            }
+            else
+            {
+                for (int i = 0; i < segments.Count; i += BatchSize)
                 {
-                    break;
+                    var batch = segments.GetRange(i, Math.Min(BatchSize, segments.Count - i)).ToArray();
+                    if (batch.Length == 0)
+                    {
+                        break;
+                    }
+                    var accPrediction = Predict(batch);
+                    predictionsArraysAcc.AddRange(accPrediction);
                 }
-                var accPrediction = Predict(batch);
-                predictionsArraysAcc.AddRange(accPrediction);
+                if (AccAiCache.Enabled) AccAiCache.Put(cacheKey, predictionsArraysAcc.SelectMany(p => p).ToArray());
             }
 
             var accs = new List<float>();
@@ -604,6 +633,20 @@ namespace RatingAPI.Controllers
             throw new InvalidOperationException("The multiplier value did not match any curve point.");
         }
 
+        // Short maps keep only ShortFarmWeight of the farmability boost (ScaleFarmability: short / few-note maps, grinded more
+        // often, get a higher predicted acc) below ShortFarmNotesLow notes, back to the full boost at ShortFarmNotesFull notes
+        // (smoothstep on log notes): the full boost overpredicted them, -6% worth under 115 notes; longer maps were right. Halved
+        // on every map, long maps fell to -1%.
+        public static double ShortFarmWeight { get; set; } = 0.45;
+        public static double ShortFarmNotesLow { get; set; } = 100;
+        public static double ShortFarmNotesFull { get; set; } = 300;
+
+        static double ShortFarmFade(int noteCount)
+        {
+            double t = Math.Clamp((Math.Log(Math.Max(noteCount, 1)) - Math.Log(ShortFarmNotesLow)) / (Math.Log(ShortFarmNotesFull) - Math.Log(ShortFarmNotesLow)), 0, 1);
+            return ShortFarmWeight + (1 - ShortFarmWeight) * t * t * (3 - 2 * t);
+        }
+
         public double ScaleFarmability(double acc, int noteCount, double mapLength, double farmSessionLength = 60 * 60)
         {
             const int baseAttemptsCount = 30;
@@ -615,17 +658,19 @@ namespace RatingAPI.Controllers
 
             double attemptMultiplier = Math.Log(attemptsScale) + 2.7081502061025433;
             double attemptsScaler = Math.Pow(attemptMultiplier >= 0 ? attemptMultiplier : 0, 0.69) / 2.0;
-            double multiplier = GetMultiplierForAccScale(acc) + noteScaler * attemptsScaler * baseMultiplier * (Math.Min(1, baseNoteCount * 10.0 / noteCount));
+            double multiplier = GetMultiplierForAccScale(acc) + ShortFarmFade(noteCount) * noteScaler * attemptsScaler * baseMultiplier * (Math.Min(1, baseNoteCount * 10.0 / noteCount));
             return GetAccForMultiplierScale(multiplier);
         }
 
-        public double GetAIAcc(DifficultyV3 mapdata, double bpm, double timescale, double njsMult = 1, List<Note> notesToIgnore = null) =>
-            GetAIAccAndHits(mapdata, bpm, timescale, njsMult, notesToIgnore).AIAcc;
+        public double GetAIAcc(DifficultyV3 mapdata, double bpm, double timescale, double njsMult = 1, List<Note> notesToIgnore = null, IReadOnlyDictionary<Note, float[]> swing = null) =>
+            GetAIAccAndHits(mapdata, bpm, timescale, njsMult, notesToIgnore, swing).AIAcc;
 
         // GetAIAcc and the note predictions it comes from (PredictHitsForMap: acc of each note, its time in song seconds)
-        public (double AIAcc, List<float> Accs, List<double> NoteTimes) GetAIAccAndHits(DifficultyV3 mapdata, double bpm, double timescale, double njsMult = 1, List<Note> notesToIgnore = null)
+        // swing: the map's Acc AI swing features (AccAiSwingFeatures.Compute of the Analyzer's Ratings.SwingData), for a
+        // model with them (UsesSwingFeatures)
+        public (double AIAcc, List<float> Accs, List<double> NoteTimes) GetAIAccAndHits(DifficultyV3 mapdata, double bpm, double timescale, double njsMult = 1, List<Note> notesToIgnore = null, IReadOnlyDictionary<Note, float[]> swing = null)
         {
-            var (accs, noteTimes, freePoints) = PredictHitsForMap(mapdata, bpm, timescale, njsMult, notesToIgnore);
+            var (accs, noteTimes, freePoints) = PredictHitsForMap(mapdata, bpm, timescale, njsMult, notesToIgnore, swing);
             double AIacc = GetMapAccForHits(accs, freePoints);
             double adjustedAIacc = ScaleFarmability(AIacc, accs.Count, ((noteTimes.Last() - noteTimes.First() + 4) / timescale) + 2);
             AIacc = adjustedAIacc;

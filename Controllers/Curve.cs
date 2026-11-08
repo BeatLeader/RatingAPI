@@ -52,8 +52,7 @@
         // Base curve for every map (maps without a usable predicted acc)
         public List<Point> GetCurve(LackMapCalculation lackRatings)
         {
-            double nerf = CurveSettings.Current.LowNoteMultiplier(lackRatings.NoteCount, lackRatings.NoteSpan);
-            return BaseTable.Select(p => new Point(p.x, p.y * nerf)).ToList();
+            return BaseTable.Select(p => new Point(p.x, p.y)).ToList();
         }
 
         // Per-map acc curve: ModifiableCurve (from the AccCurvePerMap branch) with all its parameters (A, C, K, W, K2, P2)
@@ -68,14 +67,11 @@
         public List<Point> GetCurve(LackMapCalculation lackRatings, double predictedAcc)
         {
             var curves = PerMapCurves(predictedAcc);
-            double tilt = SliderTilt(lackRatings, predictedAcc);
-            var settings = CurveSettings.Current;
-            double nerf = settings.LowNoteMultiplier(lackRatings.NoteCount, lackRatings.NoteSpan);
-            if (curves == null && tilt == 0)
+            if (curves == null)
             {
                 return GetCurve(lackRatings);
             }
-            double a = curves?.modified.A ?? 1.0;
+            double a = curves.Value.modified.A;
 
             // Base table points, 0.5% steps from 60% to 95%, 0.05% steps from 95% to 100%, and A
             var xs = BaseTable.Select(p => p.x)
@@ -87,31 +83,12 @@
                 .Distinct()
                 .OrderByDescending(x => x);
 
-            double Raw(double x)
-            {
-                double value = curves == null ? BaseValue(x) : PerMapValue(curves.Value, x);
-                if (tilt != 0)
-                {
-                    // Slider tilt: steeper around the predicted acc (unchanged there), up to SliderTiltRange away from it
-                    double distance = Math.Clamp(x - predictedAcc, -settings.SliderTiltRange, settings.SliderTiltRange);
-                    value *= Math.Exp(tilt * distance * 100);
-                }
-                return value;
-            }
-            return xs.Select(x => new Point(x, Raw(x) * nerf)).ToList();
+            return xs.Select(x => new Point(x, PerMapValue(curves.Value, x))).ToList();
         }
 
         // Sliders and curved sliders per swing of a rated map
         public static double SliderPercentage(global::beatleader_analyzer.BeatmapScanner.Data.Ratings ratings) =>
             ratings.SwingData.Count > 0 ? (ratings.Statistics.Sliders + ratings.Statistics.CurvedSliders) / (double)ratings.SwingData.Count : 0;
-
-        // Slider tilt per 1% acc of a map's curve (0: none)
-        private static double SliderTilt(LackMapCalculation lackRatings, double predictedAcc)
-        {
-            var settings = CurveSettings.Current;
-            if (!settings.Enabled || settings.SliderTilt == 0 || predictedAcc <= 0.6 || predictedAcc >= 0.9995) return 0;
-            return settings.SliderTilt * lackRatings.SliderPercentage;
-        }
 
         // Value of the per-map curve (GetCurve above) at acc, computed directly instead of from the sampled points.
         // Used by the acc rating (AccRating.Curve). forRating: with the rows' RatingC instead of C (see CurveRow.RatingC).
@@ -339,12 +316,15 @@
     {
         public bool Enabled { get; set; } = true;
 
+        // The 95.5-97% rows' predicted acc moved down 0.13-0.25 points (were 0.955 / 0.960 / 0.965 / 0.970) with the anchored
+        // Acc AI (2026-11-07), which predicts those maps that much lower: the same maps keep the same curves (12*+ maps' top
+        // play p95 764 -> 760, top 857 -> 849, worth unchanged)
         public List<CurveRow> Table { get; set; } = new()
         {
-            new CurveRow { PredictedAcc = 0.955, A = 1.0,     C = -5.30, K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46 },
-            new CurveRow { PredictedAcc = 0.960, A = 0.99,    C = -3.00, K = 4.30, W = 0.66, K2 = 4.80, P2 = 1.85 },
-            new CurveRow { PredictedAcc = 0.965, A = 0.988,   C = -2.40, K = 4.50, W = 0.64, K2 = 4.50, P2 = 1.95 },
-            new CurveRow { PredictedAcc = 0.970, A = 0.986,   C = -2.20, K = 4.70, W = 0.62, K2 = 4.20, P2 = 2.05 },
+            new CurveRow { PredictedAcc = 0.9525, A = 1.0,     C = -5.30, K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46 },
+            new CurveRow { PredictedAcc = 0.9575, A = 0.99,    C = -3.00, K = 4.30, W = 0.66, K2 = 4.80, P2 = 1.85 },
+            new CurveRow { PredictedAcc = 0.963, A = 0.988,   C = -2.40, K = 4.50, W = 0.64, K2 = 4.50, P2 = 1.95 },
+            new CurveRow { PredictedAcc = 0.9687, A = 0.986,   C = -2.20, K = 4.70, W = 0.62, K2 = 4.20, P2 = 2.05 },
             new CurveRow { PredictedAcc = 0.975, A = 0.983,   C = 0.00,  K = 4.86, W = 0.60, K2 = 3.80, P2 = 2.15 },
             new CurveRow { PredictedAcc = 0.980, A = 0.983,   C = 0.00,  K = 4.86, W = 0.60, K2 = 3.35, P2 = 2.30 },
             new CurveRow { PredictedAcc = 0.985, A = 0.985,   C = -0.60, K = 4.86, W = 0.60, K2 = 2.88, P2 = 2.46 },
@@ -355,63 +335,19 @@
         // C never goes above 1 (the curve would go down)
         public double MaxC { get; set; } = 1;
 
-        // Slider tilt: maps with many sliders (and curved sliders) were worth more than others of their stars, while their
-        // top scores sit as close to the predicted acc as on other maps (most players beat their usual acc vs the
-        // prediction there by 0.3-0.6 points: the Acc AI's wrong prediction below the top). Their curve is multiplied by
-        // e^(SliderTilt x slider share x (acc - predicted acc) in %), up to SliderTiltRange from the predicted acc: higher
-        // above it, lower under it, unchanged at it (the acc rating doesn't use it; the stars do, as scores at 96%). 0 = off.
-        public double SliderTilt { get; set; } = 0.3;
-        public double SliderTiltRange { get; set; } = 0.015;
+        // (Slider tilt, 2026-10/11: slider-heavy maps' curves steeper around the predicted acc, for players beating the old Acc
+        // AI there. Removed 2026-11-07: with the anchored Acc AI it only underpaid them, -2.7% at 0.3 for 6*+ maps with 10-30%
+        // sliders, +0.4% without.)
 
-        // Low note and length nerf: maps with few notes and short maps are worth too much for how easily they're grinded to
-        // 100%. The whole curve (so it stays smooth) is multiplied by LowNoteMultiplier = LowNoteFactor x ShortFactor, each 1
-        // at most: one of them nerfs a bit, both nerf more, nothing is buffed. Speed modifiers don't raise low note maps'
-        // ratings (LowNoteSpeedBlend), and their shorter real time makes the ShortFactor stronger. Pass and tech pp aren't
-        // nerfed.
-        // Notes: 1 - (1 - LowNoteRefMultiplier) x ln(LowNoteStart / notes) / ln(LowNoteStart / LowNoteRefNotes), at least
-        // LowNoteMinMultiplier, under LowNoteStart color notes (LackMapCalculation.NoteCount; 0 = unknown: 1). LowNoteStart
-        // 0 = off.
+        // (Low note and length nerf: the whole curve x a factor under 115 notes / 75 seconds. Removed 2026-11-08: it moved stars
+        // with it and underpaid those maps, -6% worth under 115 notes. PpFormula's short map top limits their top plays instead,
+        // and Quiet Water Easy stays 600pp at 100%.)
         public double LowNoteStart { get; set; } = 115;
-        public double LowNoteRefNotes { get; set; } = 20;
-        // 0.9654: Quiet Water Easy (20 notes, 18 s) pays 600pp for a 100% (99%+ rows' C 0 and RatingC -1.2, base 100% at 7.2).
-        // 0.8031: 500pp (586 with 0.9654 on StarDivisor 55.26; the map's stars 2.29 -> about 1.95, so its low star bonus rises).
-        // 1 (off; was 0.8031): Quiet Water Easy 600pp at 100% (stars 2.08 -> 2.51, so its low star bonus falls: nothing short
-        // of 1 reaches 600). The nerf moved stars with it, so it never changed what low note maps pay against maps of their
-        // stars; it only lowered their pp. LowNoteStart stays for the speed blend (LowNoteSpeedBlend); the length nerf stays.
-        public double LowNoteRefMultiplier { get; set; } = 1;
-        public double LowNoteMinMultiplier { get; set; } = 1;
-        // Length: 1 - (1 - ShortRefMultiplier) x ln(ShortStart / span) / ln(ShortStart / ShortRefSpan), at least
-        // ShortMinMultiplier, under ShortStart seconds (ShortRefSpan 12 s: SF on an 18 s map, so the speeds stay apart above
-        // it). The span is the first to the last color note in real time (song time / the speed modifier's,
-        // LackMapCalculation.NoteSpan; 0 = unknown: 1), so FS and SF, shorter grinds, are nerfed more and SS less.
-        // ShortStart 0 = off.
-        public double ShortStart { get; set; } = 75;
-        public double ShortRefSpan { get; set; } = 12;
-        public double ShortRefMultiplier { get; set; } = 0.9;
-        public double ShortMinMultiplier { get; set; } = 0.9;
-
-        // The whole curve's multiplier (notes: color notes; span: the first to the last of them in real time, in seconds;
-        // 0 = unknown)
-        public double LowNoteMultiplier(int notes, double span = 0) => LowNoteFactor(notes) * ShortFactor(span);
-
-        public double LowNoteFactor(int notes)
-        {
-            if (LowNoteStart <= 0 || notes <= 0 || notes >= LowNoteStart || LowNoteRefNotes >= LowNoteStart) return 1;
-            double nerf = (1 - LowNoteRefMultiplier) * Math.Log(LowNoteStart / notes) / Math.Log(LowNoteStart / LowNoteRefNotes);
-            return Math.Clamp(1 - nerf, LowNoteMinMultiplier, 1);
-        }
-
-        public double ShortFactor(double span)
-        {
-            if (ShortStart <= 0 || span <= 0 || span >= ShortStart || ShortRefSpan >= ShortStart) return 1;
-            double nerf = (1 - ShortRefMultiplier) * Math.Log(ShortStart / span) / Math.Log(ShortStart / ShortRefSpan);
-            return Math.Clamp(1 - nerf, ShortMinMultiplier, 1);
-        }
 
         // Low note speed blend: under LowNoteStart color notes, a speed modifier's pass, tech and acc ratings keep (notes /
         // LowNoteStart)^2 of their difference to the nomod ones (RatingsController.BlendLowNoteSpeeds, RatingsRefresh.Refresh):
-        // speed makes these maps faster to grind, not harder, so it shouldn't raise their ratings, and the ShortFactor then
-        // gives the faster modifiers less. Squared so SF doesn't still pay more than nomod. notes: color notes (0 = unknown:
+        // speed makes these maps faster to grind, not harder, so it shouldn't raise their ratings. Squared so SF doesn't still
+        // pay more than nomod. notes: color notes (0 = unknown:
         // unchanged).
         public double LowNoteSpeedBlend(double nomod, double modifier, int notes)
         {

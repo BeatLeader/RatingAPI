@@ -9,11 +9,13 @@ namespace RatingAPI.Pp
     // those count as off)
     // OneSaber: a OneSaber map (PpFormula.OneSaberMultiplier on its scores' acc pp)
     // TopTilt / TopTiltAnchor: the acc reweighter's top tilt of the map's curve (PpFormula.TopTiltMultiplier; 0: none)
-    public readonly record struct MapRatings(float AccRating, float PassRating, float TechRating, IReadOnlyList<Vector2>? Curve = null, float PredictedAcc = 0, bool OneSaber = false, float TopTilt = 0, float TopTiltAnchor = 0);
+    // ShortTop: how much of the short map top the map gets (PpFormula.ShortTopWeight; 0: none)
+    public readonly record struct MapRatings(float AccRating, float PassRating, float TechRating, IReadOnlyList<Vector2>? Curve = null, float PredictedAcc = 0, bool OneSaber = false, float TopTilt = 0, float TopTiltAnchor = 0, float ShortTop = 0);
 
     // A map's ratings with what all of its scores' pp share: their stars and their curve's value at StarAccuracy
     // (PpCalculator.Prepare), so scoring many scores of one map computes them once
-    public readonly record struct PreparedRatings(MapRatings Ratings, float Stars, float StarCurveValue);
+    // ShortAnchor / ShortExponent: the short map top's anchor pp and exponent (PpFormula.ShortTopExponent; 1: none)
+    public readonly record struct PreparedRatings(MapRatings Ratings, float Stars, float StarCurveValue, float ShortAnchor = 0, float ShortExponent = 1);
 
     // pp of scores and stars of maps, with PpFormula.Current. Everything the pp and the stars need is here (portaBLe's
     // ReplayUtils only calls it).
@@ -79,8 +81,28 @@ namespace RatingAPI.Pp
         }
 
         // A map's ratings prepared for ScorePp (their stars and their curve's value at StarAccuracy)
-        public static PreparedRatings Prepare(MapRatings ratings) =>
-            new(ratings, ToStars(ratings), CurveValue(StarAccuracy, ratings.Curve));
+        // speed: these are a speed modifier's ratings (no pass light bonus)
+        public static PreparedRatings Prepare(MapRatings ratings, bool speed = false)
+        {
+            float stars = ToStars(ratings), starCurveValue = CurveValue(StarAccuracy, ratings.Curve);
+            if (ratings.ShortTop <= 0 || !(ratings.PredictedAcc > 0)) return new(ratings, stars, starCurveValue);
+            var formula = PpFormula.Current;
+            float anchor = PlainPp(StarAccuracy, ratings, stars, starCurveValue, speed);
+            float reference = PlainPp(formula.ShortTopReferenceAcc(ratings.PredictedAcc), ratings, stars, starCurveValue, speed);
+            return new(ratings, stars, starCurveValue, anchor, formula.ShortTopExponent(ratings.ShortTop, anchor, reference));
+        }
+
+        // A score's pp without modifiers, before the short map top
+        private static float PlainPp(float accuracy, MapRatings map, float stars, float starCurveValue, bool speed)
+        {
+            var formula = PpFormula.Current;
+            var (pass, acc, tech) = GetPp(accuracy, map.AccRating, map.PassRating, map.TechRating, map.Curve, formula.CurvePowerAt(stars), starCurveValue, map.PredictedAcc);
+            acc *= formula.MidStarTopMultiplier(stars, accuracy, map.PredictedAcc);
+            if (map.OneSaber) acc *= formula.OneSaberMultiplier(stars, accuracy, map.PredictedAcc);
+            else if (!speed) acc *= formula.PassLightMultiplier(stars, map.PassRating, map.TechRating, accuracy, map.PredictedAcc);
+            if (map.TopTilt != 0) acc *= formula.TopTiltMultiplier(map.TopTilt, CurveValue(accuracy, map.Curve), CurveValue(map.TopTiltAnchor, map.Curve));
+            return Scale(pass + acc + tech) * formula.LowStarMultiplier(stars);
+        }
 
         // The ranked modifier multipliers (ModifiersMap.RankedMap, read only)
         private static readonly ModifiersMap RankedModifiers = ModifiersMap.RankedMap();
@@ -109,7 +131,7 @@ namespace RatingAPI.Pp
             MapRatings ratings,
             MapRatings? speedRatings = null,
             bool speedModifiersRated = false) =>
-            ScorePp(accuracy, modifiers, Prepare(ratings), speedRatings is MapRatings speed ? Prepare(speed) : null, speedModifiersRated);
+            ScorePp(accuracy, modifiers, Prepare(ratings), speedRatings is MapRatings speed ? Prepare(speed, true) : null, speedModifiersRated);
 
         // ScorePp with the ratings prepared (Prepare): the same pp, for scoring many scores of one map
         public static (float, float, float, float, float) ScorePp(
@@ -128,28 +150,27 @@ namespace RatingAPI.Pp
             if (!modifiers.Contains("NF"))
             {
                 var formula = PpFormula.Current;
-                // The low star bonus (PpFormula.LowStarMultiplier), the mid star and tech top bonuses on acc pp (MidStarTopMultiplier,
-                // TechTopMultiplier) and the acc
-                // curve power use the stars (and predicted acc) of the ratings each pp uses, as does the OneSaber acc pp
+                // The low star bonus (PpFormula.LowStarMultiplier), the mid star top bonus on acc pp (MidStarTopMultiplier) and
+                // the acc curve power use the stars (and predicted acc) of the ratings each pp uses, as does the OneSaber acc pp
                 // multiplier (OneSaberMultiplier, not in stars) and the pass light bonus (PassLightMultiplier, nomod speed only)
                 var map = ratings.Ratings;
                 float stars = ratings.Stars;
                 (passPP, accPP, techPP) = GetPp(accuracy, map.AccRating, map.PassRating, map.TechRating, map.Curve, formula.CurvePowerAt(stars), ratings.StarCurveValue, map.PredictedAcc);
-                accPP *= formula.MidStarTopMultiplier(stars, accuracy, map.PredictedAcc) * formula.TechTopMultiplier(stars, map.TechRating, accuracy, map.PredictedAcc);
+                accPP *= formula.MidStarTopMultiplier(stars, accuracy, map.PredictedAcc);
                 if (map.OneSaber) accPP *= formula.OneSaberMultiplier(stars, accuracy, map.PredictedAcc);
                 else if (speedRatings == null) accPP *= formula.PassLightMultiplier(stars, map.PassRating, map.TechRating, accuracy, map.PredictedAcc);
                 if (map.TopTilt != 0) accPP *= formula.TopTiltMultiplier(map.TopTilt, CurveValue(accuracy, map.Curve), CurveValue(map.TopTiltAnchor, map.Curve));
-                rawPP = Scale(passPP + accPP + techPP) * formula.LowStarMultiplier(stars);
+                rawPP = formula.ShortTopPower(Scale(passPP + accPP + techPP) * formula.LowStarMultiplier(stars), ratings.ShortAnchor, ratings.ShortExponent);
 
                 var prepared = speedRatings ?? ratings;
                 var score = prepared.Ratings;
                 float scoreStars = prepared.Stars;
                 (passPP, accPP, techPP) = GetPp(accuracy, score.AccRating * mp, score.PassRating * mp, score.TechRating * mp, score.Curve, formula.CurvePowerAt(scoreStars), prepared.StarCurveValue, score.PredictedAcc);
-                accPP *= formula.MidStarTopMultiplier(scoreStars, accuracy, score.PredictedAcc) * formula.TechTopMultiplier(scoreStars, score.TechRating, accuracy, score.PredictedAcc);
+                accPP *= formula.MidStarTopMultiplier(scoreStars, accuracy, score.PredictedAcc);
                 if (score.OneSaber) accPP *= formula.OneSaberMultiplier(scoreStars, accuracy, score.PredictedAcc);
                 else if (speedRatings == null) accPP *= formula.PassLightMultiplier(scoreStars, score.PassRating, score.TechRating, accuracy, score.PredictedAcc);
                 if (score.TopTilt != 0) accPP *= formula.TopTiltMultiplier(score.TopTilt, CurveValue(accuracy, score.Curve), CurveValue(score.TopTiltAnchor, score.Curve));
-                fullPP = Scale(passPP + accPP + techPP) * formula.LowStarMultiplier(scoreStars);
+                fullPP = formula.ShortTopPower(Scale(passPP + accPP + techPP) * formula.LowStarMultiplier(scoreStars), prepared.ShortAnchor, prepared.ShortExponent);
                 if (passPP + accPP + techPP > 0) {
                     increase = fullPP / (passPP + accPP + techPP);
                 }
