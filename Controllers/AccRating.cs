@@ -12,7 +12,7 @@
 
         // The corrections' constants below are settable for experiments (portaBLe reacc); change their defaults here.
         // Removed 2026-11-07 with the Acc AI trained on whole-leaderboard anchored targets, which predicts these maps' shortfall
-        // itself: the hard map correction (predicted acc lowered under 96.75%), the high pass correction and buff (lowered
+        // itself: the first hard map correction (predicted acc lowered under 96.75%, back below as the high star correction), the high pass correction and buff (lowered
         // above pass 14.52 / from 13.5) and their speed modifier variant (the nomod pass). Without them worth by predicted acc
         // and by pass was flat (95-96.75% -0.5..+0.6%, pass 9+ -1.8..+1.5%).
 
@@ -38,10 +38,20 @@
         // overshot to +0.009 / +0.028). 0 since 2026-11-07 (with HIT_DISTANCE_SLOPE 0.015): 0.2 put those maps 1.2% over,
         // none leaves them even (-0.0002).
         public static double HIT_DISTANCE_EASY_SHARE { get; set; } = 0;
-        // The predicted acc the acc rating uses (see the correction above). hitDistance: Ratings.HitDistance (0 leaves the
+        // High star correction: the acc rating uses a predicted acc lowered by HARD_MAP_SLOPE times the distance below
+        // HARD_MAP_KNEE, capped at HARD_MAP_FLOOR, from each speed modifier's own predicted acc. Without it the same scores paid
+        // 3-6% less at 13-16 stars (nomod, FS and SF alike) and pay fell with stars above 12. Worth compares maps of the same
+        // stars, so it can't see this. HARD_MAP_SLOPE 0 = off. 0.8: 13-16 stars about back to before the removal (0.4 left them
+        // -1 to -4%, 1.24 went over and took plays past 850pp).
+        public static double HARD_MAP_KNEE { get; set; } = 0.9675;
+        public static double HARD_MAP_SLOPE { get; set; } = 0.8;
+        public static double HARD_MAP_FLOOR { get; set; } = 0.95;
+
+        // The predicted acc the acc rating uses (see the corrections above). hitDistance: Ratings.HitDistance (0 leaves the
         // correction out).
         public static double EffectiveAcc(double predictedAcc, double hitDistance = 0) =>
-            predictedAcc - HIT_DISTANCE_SLOPE * Math.Max(0, Math.Min(hitDistance, HIT_DISTANCE_CAP) - HIT_DISTANCE_KNEE)
+            predictedAcc - HARD_MAP_SLOPE * Math.Max(0, HARD_MAP_KNEE - Math.Max(predictedAcc, HARD_MAP_FLOOR))
+                - HIT_DISTANCE_SLOPE * Math.Max(0, Math.Min(hitDistance, HIT_DISTANCE_CAP) - HIT_DISTANCE_KNEE)
                 * Math.Max(HIT_DISTANCE_EASY_SHARE, Math.Clamp((HIT_DISTANCE_NONE_ABOVE - predictedAcc) / (HIT_DISTANCE_NONE_ABOVE - HIT_DISTANCE_FULL_BELOW), 0, 1));
 
         // Hard swing correction: maps whose hardest swings are scattered over the map (Analyzer Ratings.HardSwingRatio above 1)
