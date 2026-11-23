@@ -49,6 +49,9 @@ namespace RatingAPI.Controllers
 
     public class RatingResult
     {
+        // What a 96% score is worth, from these ratings and PointList (Pp.PpCalculator.ToStars). First in the JSON.
+        [JsonPropertyName("stars")]
+        public double Stars { get; set; } = 0;
         [JsonPropertyName("predicted_acc")]
         public double PredictedAcc { get; set; } = 0;
         [JsonPropertyName("acc_rating")]
@@ -57,9 +60,6 @@ namespace RatingAPI.Controllers
         public LackMapCalculation LackMapCalculation { get; set; } = new();
         [JsonPropertyName("pointlist")]
         public List<Point> PointList { get; set; } = new();
-        // What a 96% score is worth, from these ratings and PointList (Pp.PpCalculator.ToStars)
-        [JsonPropertyName("stars")]
-        public double Stars { get; set; } = 0;
         [JsonPropertyName("song_length")]
         public float Length { get; set; } = 0;
         // Base NJS of the difficulty from Info.dat (the speed modifier isn't applied)
@@ -166,8 +166,8 @@ namespace RatingAPI.Controllers
         {
             Stopwatch sw = Stopwatch.StartNew();
             var modifiers = new List<(string, double)>() {
-                ("SS", 0.85),
                 ("none", 1),
+                ("SS", 0.85),
                 ("FS", 1.2),
                 ("SFS", 1.5),
                 ("BFS", 1.2),
